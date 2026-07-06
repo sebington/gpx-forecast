@@ -2088,48 +2088,8 @@
   "total_distance": 828.8,
   "stages": [
     {
-      "name": "1-Melun-ChatillonSurLoire",
+      "name": "Tourmagne",
       "start_idx": 0,
-      "end_idx": 46
-    },
-    {
-      "name": "2-ChatillonSurLoire-Nevers",
-      "start_idx": 47,
-      "end_idx": 78
-    },
-    {
-      "name": "3-Nevers-Charroux",
-      "start_idx": 79,
-      "end_idx": 121
-    },
-    {
-      "name": "4-Charroux-ClermontFerrand",
-      "start_idx": 122,
-      "end_idx": 155
-    },
-    {
-      "name": "5-ClermontFerrand-Massiac",
-      "start_idx": 156,
-      "end_idx": 198
-    },
-    {
-      "name": "6-Massiac-LaGarde",
-      "start_idx": 199,
-      "end_idx": 245
-    },
-    {
-      "name": "7-LaGarde-Mende",
-      "start_idx": 246,
-      "end_idx": 281
-    },
-    {
-      "name": "8-Mende-LePompidou",
-      "start_idx": 282,
-      "end_idx": 311
-    },
-    {
-      "name": "9-LePompidou-Nimes",
-      "start_idx": 312,
       "end_idx": 346
     }
   ],

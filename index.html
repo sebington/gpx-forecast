@@ -521,7 +521,7 @@ async function loadFromGpxFile(file) {
 // ===========================================================================
 async function loadRouteData() {
   setLoadMsg('Loading route data…');
-  const resp = await fetch('route_data.json');
+  const resp = await fetch('route_data.json?' + Date.now());
   const data = await resp.json();
   state.routeData = data;
   state.samplingInterval = data.sampling_interval_km || 50;
