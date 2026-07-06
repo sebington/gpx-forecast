@@ -26,7 +26,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 }
 #top-bar .title { font-weight: 700; font-size: 15px; color: #fff; }
 #top-bar .title span { color: #ffcc44; }
-#top-bar .subtitle { color: #999; font-size: 12px; }
+#top-bar .title #route-info { color: #999; font-weight: 400; font-size: 13px; }
 #top-bar .btn.small { font-size: 11px; padding: 3px 10px; }
 
 /* Drag-drop overlay */
@@ -219,8 +219,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
     <div id="map"></div>
     
     <div id="top-bar">
-      <div class="title">🚴 GPX Temperature Forecast</div>
-      <div class="subtitle">Plan your bikepacking trips</div>
+      <div class="title">🚴 GPX Temperature Forecast<span id="route-info"></span></div>
       <button class="btn small" id="open-gpx-btn" title="Open a GPX file">📂 Open GPX</button>
       <input type="file" accept=".gpx,.xml" id="gpx-file-input" style="display:none">
     </div>
@@ -741,17 +740,15 @@ function updateRouteColors(timeIdx) {
     const color = temp !== null ? tempToColor(temp) : '#333';
     state.segments[i].setStyle({ color });
   }
-  // Also update temperature labels every 100 km
+  // Also update temperature labels
   if (tempLabels.length > 0) updateTempLabels(timeIdx);
 }
 
 // ===========================================================================
-//  TEMPERATURE LABELS (every 100 km, offset beside the route)
-//  Show live temperature at each 100 km mark, updating during animation.
-//  Labels sit perpendicular to the route direction to avoid obscuring it.
+//  TEMPERATURE LABELS (10 evenly spaced along the route, on the track)
+//  Each label shows temperature + km distance, placed directly on the route.
 // ===========================================================================
 let tempLabels = [];
-let tempConnectors = []; // thin lines from route point to label
 
 function getRouteCoordAtDist(dist) {
   const route = state.routeData.route_points;
@@ -759,7 +756,7 @@ function getRouteCoordAtDist(dist) {
   for (let j = 1; j < route.length; j++) {
     if (cumDist[j] >= dist) {
       const f = (dist - cumDist[j-1]) / (cumDist[j] - cumDist[j-1]);
-      return { 
+      return {
         lat: route[j-1][0] + f * (route[j][0] - route[j-1][0]),
         lon: route[j-1][1] + f * (route[j][1] - route[j-1][1]),
       };
@@ -783,87 +780,35 @@ function findOrigSamplesBracketing(dist) {
   return { before, after, factor };
 }
 
-/** Bearing from point a to b in degrees (0=North, clockwise). */
-function bearing(a, b) {
-  const dLon = (b.lon - a.lon) * Math.PI / 180;
-  const y = Math.sin(dLon) * Math.cos(b.lat * Math.PI / 180);
-  const x = Math.cos(a.lat * Math.PI / 180) * Math.sin(b.lat * Math.PI / 180) -
-            Math.sin(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.cos(dLon);
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-}
-
-/**
- * Return a point offset perpendicular to `bearingDeg`, on the left side.
- * offsetKm: how far to shift (≈12 km works well at zoom ~8).
- */
-function offsetLeft(lat, lon, bearingDeg, offsetKm) {
-  const angle = (bearingDeg + 90) * Math.PI / 180; // left of travel direction
-  const R = 6371;
-  const dLat = (offsetKm / R) * Math.cos(angle);
-  const dLon = (offsetKm / R) * Math.sin(angle) / Math.cos(lat * Math.PI / 180);
-  return { lat: lat + dLat * 180 / Math.PI, lon: lon + dLon * 180 / Math.PI };
-}
-
 function createTempLabels() {
-  // Clean up previous labels/lines
+  // Clean up previous labels
   for (const l of tempLabels) state.map.removeLayer(l.marker);
-  for (const c of tempConnectors) state.map.removeLayer(c);
   tempLabels = [];
-  tempConnectors = [];
 
   const data = state.routeData;
-  const route = data.route_points;
   const totalDist = data.cumulative_distances[data.cumulative_distances.length - 1];
-  const OFFSET_KM = 14;
 
-  // Every 100 km from 0 to end
+  // 10 evenly spaced positions (0 to totalDist inclusive)
+  const N = 10;
   const positions = [];
-  for (let d = 0; d <= totalDist; d += 100) {
-    positions.push(d);
+  for (let i = 0; i < N; i++) {
+    positions.push((i / (N - 1)) * totalDist);
   }
-  const lastPos = positions[positions.length - 1];
-  if (totalDist - lastPos > 10) positions.push(totalDist);
 
   for (let i = 0; i < positions.length; i++) {
     const dist = positions[i];
     const coord = getRouteCoordAtDist(dist);
     const bracketing = findOrigSamplesBracketing(dist);
-    const isEndpoint = (i === 0 || (i === positions.length - 1 && Math.abs(dist - totalDist) < 1));
-
-    // Determine route bearing at this point (look ±3 km along the route)
-    const dAhead = Math.min(dist + 3, totalDist);
-    const dBehind = Math.max(dist - 3, 0);
-    const ahead = getRouteCoordAtDist(dAhead);
-    const behind = getRouteCoordAtDist(dBehind);
-    const brg = bearing(behind, ahead);
-
-    // Offset the label to the left of the travel direction
-    const offset = offsetLeft(coord.lat, coord.lon, brg, OFFSET_KM);
+    const isEndpoint = (i === 0 || i === positions.length - 1);
 
     // Distance label
     let distLabel;
-    if (dist === 0) distLabel = 'Start';
+    if (dist === 0) distLabel = '0km';
     else if (dist >= totalDist - 1) distLabel = `${Math.round(totalDist)}km`;
     else distLabel = `${Math.round(dist)}km`;
 
-    // Small dot at the route point for reference
-    const dot = L.circleMarker([coord.lat, coord.lon], {
-      radius: 3, color: 'rgba(255,255,255,0.4)',
-      fillColor: 'rgba(255,255,255,0.2)', fillOpacity: 0.6,
-      weight: 1, opacity: 0.5,
-      interactive: false,
-    }).addTo(state.map);
-    tempConnectors.push(dot);
-
-    // Thin connector line from route point → label
-    const line = L.polyline([[coord.lat, coord.lon], [offset.lat, offset.lon]], {
-      color: 'rgba(255,255,255,0.2)', weight: 1, dashArray: '3,4',
-      interactive: false, opacity: 0.5,
-    }).addTo(state.map);
-    tempConnectors.push(line);
-
-    // The temperature badge at the offset position
-    const marker = L.marker([offset.lat, offset.lon], {
+    // Label badge placed directly on the route (no offset)
+    const marker = L.marker([coord.lat, coord.lon], {
       icon: L.divIcon({
         className: 'temp-label-container',
         html: `
@@ -908,7 +853,7 @@ function updateTempLabels(timeIdx) {
     if (!el) continue;
     const valueEl = el.querySelector('.temp-label-value');
     if (!valueEl) continue;
-    
+
     if (temp !== null) {
       valueEl.textContent = `${Math.round(temp)}°`;
       valueEl.style.color = tempToColor(temp);
@@ -1192,66 +1137,131 @@ function resizeSkyCanvas() {
 // ===========================================================================
 //  MAP MOUSE INTERACTION
 // ===========================================================================
+function closestPointOnSegment(p, a, b) {
+  // Returns { lat, lng, t } where t is the interpolation factor along the segment
+  const d = a.distanceTo(b);
+  if (d === 0) return { lat: a.lat, lng: a.lng, t: 0 };
+  // Project p onto the line a-b, clamp to [0,1]
+  const t = Math.max(0, Math.min(1,
+    ((p.lat - a.lat) * (b.lat - a.lat) + (p.lng - a.lng) * (b.lng - a.lng)) / (d * d)
+  ));
+  return {
+    lat: a.lat + t * (b.lat - a.lat),
+    lng: a.lng + t * (b.lng - a.lng),
+    t,
+  };
+}
+
 function setupMapInteraction() {
   const map = state.map;
-  let tooltip = null;
+  const route = state.routeData.route_points;
+  const cumDist = state.cumDist;
+
+  // Single persistent tooltip (reused, not recreated on every mousemove)
+  const tooltip = L.tooltip({ className: 'temp-tooltip', direction: 'top', offset: [0, -10] });
 
   map.on('mousemove', function(e) {
-    const route = state.routeData.route_points;
-    const cumDist = state.cumDist;
+    // Dynamic threshold: ~25 pixels on screen, regardless of zoom
+    const pxl = map.latLngToContainerPoint(e.latlng);
+    const pxl2 = L.point(pxl.x + 25, pxl.y);
+    const threshold = map.distance(e.latlng, map.containerPointToLatLng(pxl2));
 
-    // Find nearest point on route
-    let minDist = Infinity;
-    let nearestIdx = 0;
-    for (let i = 0; i < route.length; i++) {
-      const d = map.distance(e.latlng, [route[i][0], route[i][1]]);
-      if (d < minDist) { minDist = d; nearestIdx = i; }
+    let bestDist = Infinity;
+    let bestLat = null, bestLng = null;
+    let bestSegIdx = 0;
+    let bestDistAlong = 0;
+    let bestEle = 0;
+
+    for (let i = 0; i < route.length - 1; i++) {
+      const a = L.latLng(route[i][0], route[i][1]);
+      const b = L.latLng(route[i+1][0], route[i+1][1]);
+      const cp = closestPointOnSegment(e.latlng, a, b);
+      const dist = map.distance(e.latlng, [cp.lat, cp.lng]);
+
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestSegIdx = i;
+        bestLat = cp.lat;
+        bestLng = cp.lng;
+        bestDistAlong = cumDist[i] + cp.t * (cumDist[i+1] - cumDist[i]);
+        bestEle = route[i][2] + cp.t * (route[i+1][2] - route[i][2]);
+      }
     }
 
-    // Only show if close enough to route
-    if (minDist > 2000) { // 2km threshold
-      if (tooltip) { map.closeTooltip(); tooltip = null; }
+    if (bestDist > threshold) {
+      if (tooltip._map) map.closeTooltip(tooltip);
       state.cursorMarker.setStyle({ opacity: 0 });
+      state.hoveredLatLng = null;
+      clearElevationHover();
       return;
     }
 
-    const pt = route[nearestIdx];
-    const dist = cumDist[nearestIdx];
-    const ele = pt[2];
-
-    // Get temperature at this point (interpolate between nearest segment samples)
-    const segIdx = Math.min(nearestIdx, state.segments.length - 1);
-    const temp = getInterpolatedTemp(segIdx, state.currentTimeIndex);
-
+    // Get temperature at this segment
+    const temp = getInterpolatedTemp(bestSegIdx, state.currentTimeIndex);
     const tempStr = temp !== null ? `${temp.toFixed(1)}°C` : '--°C';
 
-    if (tooltip) map.closeTooltip();
-    tooltip = L.tooltip({
-      className: 'temp-tooltip',
-      direction: 'top',
-      offset: [0, -10],
-      permanent: false,
-    })
-      .setLatLng([pt[0], pt[1]])
-      .setContent(`
-        <div class="temp-val">${tempStr}</div>
-        <div class="temp-detail">📍 ${dist.toFixed(0)} km · ⛰️ ${ele.toFixed(0)} m</div>
-      `)
-      .addTo(map);
+    // Update tooltip
+    tooltip.setLatLng([bestLat, bestLng]);
+    tooltip.setContent(`
+      <div class="temp-val">${tempStr}</div>
+      <div class="temp-detail">📍 ${bestDistAlong.toFixed(0)} km · ⛰️ ${bestEle.toFixed(0)} m</div>
+    `);
+    if (!tooltip._map) tooltip.addTo(map);
 
     // Cursor marker
-    state.cursorMarker.setLatLng([pt[0], pt[1]]);
+    state.cursorMarker.setLatLng([bestLat, bestLng]);
     state.cursorMarker.setStyle({ opacity: 1 });
 
     // Update elevation profile
-    updateElevationHover(dist);
-    state.hoveredLatLng = { dist, idx: nearestIdx, temp };
+    updateElevationHover(bestDistAlong);
+    state.hoveredLatLng = { dist: bestDistAlong, segIdx: bestSegIdx, temp };
   });
 
   map.on('mouseout', function() {
-    if (tooltip) { map.closeTooltip(); tooltip = null; }
+    if (tooltip._map) map.closeTooltip(tooltip);
     state.cursorMarker.setStyle({ opacity: 0 });
+    state.hoveredLatLng = null;
     clearElevationHover();
+  });
+
+  // Click on route → show a popup with the same info
+  map.on('click', function(e) {
+    const route = state.routeData.route_points;
+    const cumDist = state.cumDist;
+
+    // Same segment-proximity check as mousemove
+    const pxl = map.latLngToContainerPoint(e.latlng);
+    const pxl2 = L.point(pxl.x + 25, pxl.y);
+    const threshold = map.distance(e.latlng, map.containerPointToLatLng(pxl2));
+
+    let bestDist = Infinity, bestLat = null, bestLng = null;
+    let bestSegIdx = 0, bestDistAlong = 0, bestEle = 0;
+
+    for (let i = 0; i < route.length - 1; i++) {
+      const a = L.latLng(route[i][0], route[i][1]);
+      const b = L.latLng(route[i+1][0], route[i+1][1]);
+      const cp = closestPointOnSegment(e.latlng, a, b);
+      const dist = map.distance(e.latlng, [cp.lat, cp.lng]);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestSegIdx = i; bestLat = cp.lat; bestLng = cp.lng;
+        bestDistAlong = cumDist[i] + cp.t * (cumDist[i+1] - cumDist[i]);
+        bestEle = route[i][2] + cp.t * (route[i+1][2] - route[i][2]);
+      }
+    }
+
+    if (bestDist > threshold) return;
+
+    const temp = getInterpolatedTemp(bestSegIdx, state.currentTimeIndex);
+    const tempStr = temp !== null ? `${temp.toFixed(1)}°C` : '--°C';
+
+    L.popup({ className: 'temp-tooltip', closeButton: true })
+      .setLatLng([bestLat, bestLng])
+      .setContent(`
+        <div class="temp-val">${tempStr}</div>
+        <div class="temp-detail">📍 ${bestDistAlong.toFixed(0)} km · ⛰️ ${bestEle.toFixed(0)} m</div>
+      `)
+      .openOn(map);
   });
 }
 
@@ -1731,7 +1741,7 @@ async function initApp(routeData) {
   createRouteSegments();
   setLoadProgress(85);
 
-  // 5. Add temperature labels every 100 km
+  // 5. Add temperature labels (10 evenly spaced)
   createTempLabels();
 
   // 6. Color route starting at current real-world time
@@ -1798,11 +1808,8 @@ async function handleGpxFile(file) {
     state.isPlaying = false;
     if (state.animFrameId) { clearTimeout(state.animFrameId); state.animFrameId = null; }
 
-    // Reset module-level label/connector arrays
-    for (const l of tempLabels) { /* already removed with map */ }
-    for (const c of tempConnectors) { /* already removed with map */ }
+    // Reset module-level label array
     tempLabels.length = 0;
-    tempConnectors.length = 0;
 
     // Set new route data
     state.routeData = routeData;
@@ -1814,12 +1821,12 @@ async function handleGpxFile(file) {
     document.getElementById('interval-value').textContent = state.samplingInterval;
     document.getElementById('interval-slider').value = state.samplingInterval;
 
-    // Update subtitle with route info
+    // Update title with route info
     const s0 = routeData.stages[0];
     const s1 = routeData.stages[routeData.stages.length - 1];
-    const routeName = s0 ? `${s0.name} → ${s1.name}` : 'Custom Route';
-    document.querySelector('.subtitle').textContent =
-      `${routeName} · ${routeData.total_distance.toFixed(0)} km · ${routeData.samples.length} samples`;
+    const routeName = s0 ? (s0.name === s1.name ? s0.name : `${s0.name} → ${s1.name}`) : 'Custom Route';
+    document.getElementById('route-info').textContent =
+      ` · ${routeName} · ${routeData.total_distance.toFixed(0)} km · ${routeData.samples.length} samples`;
 
     await initApp(routeData);
   } catch (err) {
@@ -1838,9 +1845,16 @@ async function init() {
     // 1. Load default route data
     const routeData = await loadRouteData();
 
-    // Update subtitle with route name
-    document.querySelector('.subtitle').textContent = 
-      `${routeData.stages[0].name} → ${routeData.stages[routeData.stages.length-1].name} · ${routeData.total_distance.toFixed(0)} km · ${routeData.samples.length} samples`;
+    // Update title with route info
+    const ri = document.getElementById('route-info');
+    if (ri) {
+      const stages = routeData.stages;
+      const name0 = stages[0].name;
+      const name1 = stages[stages.length - 1].name;
+      const routeName = name0 === name1 ? name0 : `${name0} → ${name1}`;
+      ri.textContent =
+        ` · ${routeName} · ${routeData.total_distance.toFixed(0)} km · ${routeData.samples.length} samples`;
+    }
 
     await initApp(routeData);
   } catch (err) {
