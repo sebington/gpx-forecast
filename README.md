@@ -1,6 +1,6 @@
 # 🚴 GPX Temperature Forecast
 
-Permet de visualiser les températures prévues le long d'un itinéraire (vélo par exemple) à partir d'un fichier GPX.
+Permet de visualiser les températures prévues le long d'un itinéraire (vélo par ex.) à partir d'un fichier GPX.
 
 Les prévisions sont données pour les 16 jours à venir.
 
