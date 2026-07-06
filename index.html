@@ -1,0 +1,1610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tourmagne Weather Visualizer</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #e0e0e0; }
+
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+#map-container { flex: 1; position: relative; min-height: 0; }
+#map { width: 100%; height: 100%; }
+
+/* Top bar */
+#top-bar {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(20, 20, 40, 0.88); backdrop-filter: blur(8px);
+  padding: 8px 18px; border-radius: 10px; z-index: 1000;
+  font-size: 13px; display: flex; align-items: center; gap: 16px;
+  border: 1px solid rgba(255,255,255,0.08); pointer-events: auto;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+#top-bar .title { font-weight: 700; font-size: 15px; color: #fff; }
+#top-bar .title span { color: #ffcc44; }
+#top-bar .subtitle { color: #999; font-size: 12px; }
+
+/* Bottom panel */
+#bottom-panel {
+  background: rgba(20, 20, 40, 0.95); backdrop-filter: blur(8px);
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding: 12px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+  z-index: 1000;
+}
+
+#controls-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+#controls-row label { font-size: 12px; color: #aaa; }
+#controls-row input[type="range"] {
+  accent-color: #ffcc44; height: 4px; cursor: pointer;
+}
+
+#time-display {
+  font-size: 14px; font-weight: 600; color: #fff;
+  min-width: 200px; white-space: nowrap;
+}
+#time-slider { flex: 1; min-width: 120px; }
+
+.btn {
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+  color: #e0e0e0; padding: 6px 14px; border-radius: 6px;
+  cursor: pointer; font-size: 13px; transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn:hover { background: rgba(255,255,255,0.15); }
+.btn.active { background: #ffcc44; color: #1a1a2e; border-color: #ffcc44; font-weight: 600; }
+.btn.small { padding: 4px 10px; font-size: 12px; }
+
+#speed-group { display: flex; align-items: center; gap: 4px; }
+#speed-group .btn.small.active-speed { background: #ffcc44; color: #1a1a2e; border-color: #ffcc44; }
+
+/* Interval control */
+#interval-group { display: flex; align-items: center; gap: 6px; }
+#interval-value { font-size: 13px; font-weight: 600; color: #ffcc44; min-width: 30px; text-align: center; }
+
+/* Info row */
+#info-row {
+  display: flex; align-items: center; gap: 20px; font-size: 12px; color: #aaa;
+  flex-wrap: wrap;
+}
+#info-row .hot { color: #ff4444; }
+#info-row .cold { color: #44aaff; }
+#temp-range { display: flex; align-items: center; gap: 8px; }
+#last-updated { margin-left: auto; font-size: 11px; color: #666; white-space: nowrap; }
+
+/* Legend bar */
+#legend-bar {
+  display: flex; align-items: center; gap: 8px;
+}
+#legend-gradient {
+  width: 200px; height: 12px; border-radius: 6px;
+  background: linear-gradient(to right, 
+    #1a1aff, #0080ff, #00ccff, #00e680, #40cc00, 
+    #80cc00, #ffcc00, #ff6600, #ff0000, #cc0044, #9900cc);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+#legend-wrapper {
+  position: relative; display: inline-block; line-height: 0;
+}
+#legend-labels {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  display: flex; justify-content: space-between;
+  align-items: center;
+  padding: 0 4px;
+  font-size: 9px; font-weight: 700; color: #fff;
+  text-shadow: 0 0 3px rgba(0,0,0,0.8), 0 0 6px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+
+/* Status */
+#status {
+  font-size: 11px; color: #888; padding: 2px 8px;
+  border-radius: 4px; background: rgba(255,255,255,0.04);
+}
+
+/* Elevation profile */
+#elevation-container {
+  position: absolute; bottom: 10px; right: 10px;
+  width: 320px; height: 120px; z-index: 1000;
+  background: rgba(20, 20, 40, 0.85); backdrop-filter: blur(6px);
+  border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);
+  padding: 6px; display: none;
+}
+#elevation-container.visible { display: block; }
+#elevation-canvas { width: 100%; height: 100%; border-radius: 4px; cursor: crosshair; }
+
+/* Sky panel (sun/moon arc) */
+#sky-container {
+  position: absolute; bottom: 10px; left: 10px;
+  width: 320px; height: 120px; z-index: 1000;
+  background: rgba(20, 20, 40, 0.85); backdrop-filter: blur(6px);
+  border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);
+  padding: 6px; display: none;
+}
+#sky-container.visible { display: block; }
+#sky-canvas { width: 100%; height: 100%; border-radius: 4px; cursor: default; }
+
+/* Tooltip on map */
+.temp-tooltip {
+  background: rgba(20, 20, 40, 0.92) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  color: #e0e0e0 !important; font-size: 12px !important;
+  padding: 8px 12px !important; border-radius: 8px !important;
+  backdrop-filter: blur(4px);
+}
+
+/* Temperature labels every 100 km */
+.temp-label-container { background: none !important; border: none !important; }
+.temp-label-badge {
+  display: flex; flex-direction: column; align-items: center;
+  background: rgba(10, 10, 30, 0.7);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 3px 10px;
+  min-width: 48px;
+  text-align: center;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  pointer-events: none;
+}
+.temp-label-value {
+  font-size: 16px; font-weight: 800;
+  line-height: 1.3;
+  transition: color 0.3s ease;
+}
+.temp-label-dist {
+  font-size: 9px; color: rgba(255,255,255,0.5);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  line-height: 1.2;
+}
+.temp-tooltip .temp-val { font-size: 18px; font-weight: 700; }
+.temp-tooltip .temp-detail { color: #888; font-size: 11px; }
+
+/* Leaflet overrides */
+.leaflet-popup-content-wrapper { background: rgba(20,20,40,0.95) !important; color: #e0e0e0 !important; border-radius: 8px !important; }
+.leaflet-popup-tip { background: rgba(20,20,40,0.95) !important; }
+.leaflet-control-zoom a { background: rgba(20,20,40,0.85) !important; color: #e0e0e0 !important; }
+
+/* Loading overlay */
+#loading {
+  position: absolute; inset: 0; z-index: 2000;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(10, 10, 30, 0.9); gap: 16px;
+}
+#loading .spinner {
+  width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1);
+  border-top-color: #ffcc44; border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading .msg { font-size: 14px; color: #ccc; }
+#loading .sub { font-size: 12px; color: #666; }
+#loading .progress-bar { width: 300px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
+#loading .progress-fill { height: 100%; width: 0%; background: #ffcc44; border-radius: 2px; transition: width 0.3s; }
+
+@media (max-width: 768px) {
+  #top-bar { font-size: 11px; padding: 6px 12px; flex-wrap: wrap; }
+  #bottom-panel { padding: 8px 10px; }
+  #controls-row { gap: 8px; }
+  #time-display { font-size: 12px; min-width: 140px; }
+  #legend-gradient { width: 120px; }
+  #elevation-container, #sky-container { width: 200px; height: 80px; }
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="map-container">
+    <div id="map"></div>
+    
+    <div id="top-bar">
+      <div class="title">🚴 <span>Tourmagne</span> Weather</div>
+      <div class="subtitle">Melun → Nîmes · 829 km</div>
+    </div>
+
+    <div id="elevation-container">
+      <canvas id="elevation-canvas"></canvas>
+    </div>
+
+    <div id="sky-container">
+      <canvas id="sky-canvas"></canvas>
+    </div>
+
+    <div id="loading">
+      <div class="spinner"></div>
+      <div class="msg" id="load-msg">Loading route data…</div>
+      <div class="sub" id="load-sub"></div>
+      <div class="progress-bar"><div class="progress-fill" id="load-progress"></div></div>
+    </div>
+  </div>
+
+  <div id="bottom-panel">
+    <div id="controls-row">
+      <button class="btn" id="play-btn" title="Play/Pause animation">▶</button>
+      
+      <div id="time-display">Loading…</div>
+      
+      <input type="range" id="time-slider" min="0" max="383" value="0" step="1">
+      
+      <div id="speed-group">
+        <span style="font-size:11px;color:#888">⏱</span>
+        <button class="btn small" data-speed="0.5">½×</button>
+        <button class="btn small active-speed" data-speed="1">1×</button>
+        <button class="btn small" data-speed="2">2×</button>
+        <button class="btn small" data-speed="4">4×</button>
+        <button class="btn small" data-speed="8">8×</button>
+      </div>
+
+      <div id="interval-group">
+        <span style="font-size:11px;color:#888">📍</span>
+        <label for="interval-slider">Sample</label>
+        <input type="range" id="interval-slider" min="10" max="100" value="50" step="5">
+        <span id="interval-value">50</span><span style="font-size:11px;color:#888">km</span>
+      </div>
+
+      <button class="btn small" id="refresh-btn" title="Refresh weather forecast">↻</button>
+    </div>
+
+    <div id="info-row">
+      <div id="status">Ready</div>
+      
+      <div id="legend-bar">
+        <span style="color:#44aaff;font-size:11px">Cold</span>
+        <div id="legend-wrapper">
+          <div id="legend-gradient"></div>
+          <div id="legend-labels">
+            <span>--°</span><span>--°</span><span>--°</span>
+          </div>
+        </div>
+        <span style="color:#ff4444;font-size:11px">Hot</span>
+      </div>
+      <div id="temp-range">
+        <span class="cold" id="min-temp">--°C</span>
+        <span style="color:#555">|</span>
+        <span class="hot" id="max-temp">--°C</span>
+      </div>
+      <span id="last-updated"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===========================================================================
+//  STATE
+// ===========================================================================
+const state = {
+  routeData: null,
+  weatherData: null,         // [{lat, lon, ele, temps:[384]}]
+  weatherTimes: null,        // [time strings, 384 entries]
+  segments: [],              // [L.polyline, ...]
+  segmentInfo: [],           // [{sampleBefore, sampleAfter, factor}] per segment
+  cursorMarker: null,        // hover indicator on map
+  elevCursor: null,          // hover indicator on elevation profile
+  currentTimeIndex: 0,
+  isPlaying: false,
+  animFrameId: null,
+  speed: 1,
+  samplingInterval: 50,
+  totalHours: 384,
+  hoveredLatLng: null,
+  map: null,
+  elevationCanvas: null,
+  elevCtx: null,
+  skyCanvas: null,
+  skyCtx: null,
+  isElevationVisible: false,
+};
+
+// ===========================================================================
+//  TEMPERATURE → COLOR
+//  Matches common weather website palette (Windy.com / OpenWeatherMap style)
+// ===========================================================================
+const TEMP_STOPS = [
+  { temp: -5,  r: 26,  g: 26,  b: 255 },   // deep blue
+  { temp: 0,   r: 0,   g: 128, b: 255 },    // blue
+  { temp: 5,   r: 0,   g: 204, b: 255 },    // light blue
+  { temp: 10,  r: 0,   g: 230, b: 128 },    // teal
+  { temp: 15,  r: 64,  g: 204, b: 0 },      // green
+  { temp: 20,  r: 128, g: 204, b: 0 },      // yellow-green
+  { temp: 25,  r: 255, g: 204, b: 0 },      // yellow
+  { temp: 30,  r: 255, g: 102, b: 0 },      // orange
+  { temp: 35,  r: 255, g: 0,   b: 0 },      // red
+  { temp: 40,  r: 204, g: 0,   b: 68 },     // crimson
+  { temp: 45,  r: 153, g: 0,   b: 204 },    // purple
+];
+
+function tempToColor(temp) {
+  // Clamp
+  if (temp <= TEMP_STOPS[0].temp) return rgbStr(TEMP_STOPS[0]);
+  if (temp >= TEMP_STOPS[TEMP_STOPS.length-1].temp) return rgbStr(TEMP_STOPS[TEMP_STOPS.length-1]);
+
+  for (let i = 0; i < TEMP_STOPS.length - 1; i++) {
+    const lo = TEMP_STOPS[i], hi = TEMP_STOPS[i+1];
+    if (temp >= lo.temp && temp <= hi.temp) {
+      const t = (temp - lo.temp) / (hi.temp - lo.temp);
+      return rgbStr({
+        r: Math.round(lo.r + t * (hi.r - lo.r)),
+        g: Math.round(lo.g + t * (hi.g - lo.g)),
+        b: Math.round(lo.b + t * (hi.b - lo.b)),
+      });
+    }
+  }
+  return rgbStr(TEMP_STOPS[TEMP_STOPS.length-1]);
+}
+
+function rgbStr(c) { return `rgb(${c.r},${c.g},${c.b})`; }
+
+// ===========================================================================
+//  DATA LOADING
+// ===========================================================================
+async function loadRouteData() {
+  setLoadMsg('Loading route data…');
+  const resp = await fetch('route_data.json');
+  const data = await resp.json();
+  state.routeData = data;
+  state.samplingInterval = data.sampling_interval_km || 50;
+
+  // Build segment info array for fast per-frame lookup
+  state.segmentInfo = data.segment_mapping;
+
+  // Elevation data
+  state.elevations = data.route_points.map(p => p[2]);
+  state.cumDist = data.cumulative_distances;
+
+  document.getElementById('interval-value').textContent = state.samplingInterval;
+  document.getElementById('interval-slider').value = state.samplingInterval;
+
+  setLoadMsg('Connecting to weather service…');
+  setLoadSub(`Fetching forecast for ${data.samples.length} locations along the route…`);
+
+  return data;
+}
+
+// ===========================================================================
+//  WEATHER FETCHING (Open-Meteo)
+// ===========================================================================
+function getCacheKey(samples) {
+  const str = samples.map(s => `${s.lat.toFixed(3)},${s.lon.toFixed(3)}`).join('|');
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return 'weather_' + hash;
+}
+
+async function fetchWeatherData(samples) {
+  const cacheKey = getCacheKey(samples);
+  const cached = localStorage.getItem(cacheKey);
+  const now = Date.now();
+
+  if (cached) {
+    try {
+      const parsed = JSON.parse(cached);
+      // Cache valid for 30 minutes
+      if (now - parsed.ts < 30 * 60 * 1000) {
+        console.log('Using cached weather data');
+        return parsed.data;
+      }
+    } catch (_) {}
+  }
+
+  // Batch all sample points into one API call
+  const lats = samples.map(s => s.lat.toFixed(4)).join(',');
+  const lons = samples.map(s => s.lon.toFixed(4)).join(',');
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=temperature_2m&forecast_days=16&timezone=auto`;
+
+  setLoadMsg('Fetching weather forecast…');
+  setLoadSub(`Querying Open-Meteo for ${samples.length} locations (16 days)…`);
+  
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Weather API error: ${resp.status}`);
+  
+  const data = await resp.json();
+
+  // Validate structure
+  if (!Array.isArray(data)) throw new Error('Unexpected API response format');
+
+  // Store in cache
+  localStorage.setItem(cacheKey, JSON.stringify({ ts: now, data }));
+
+  return data;
+}
+
+function extractWeatherData(apiResponse, samples) {
+  // apiResponse is an array, one entry per location (same order as requested)
+  const hourly = apiResponse.map((loc, i) => ({
+    lat: samples[i].lat,
+    lon: samples[i].lon,
+    ele: samples[i].ele,
+    times: loc.hourly.time,
+    temps: loc.hourly.temperature_2m,
+  }));
+
+  // Use the first location's times as reference
+  state.weatherTimes = hourly[0].times;
+  state.totalHours = hourly[0].temps.length;
+
+  // Build a flat array for fast lookup: [sampleIdx][hourIdx]
+  state.weatherData = hourly.map(h => ({
+    lat: h.lat,
+    lon: h.lon,
+    ele: h.ele,
+    temps: h.temps,
+  }));
+
+  // Update time slider max
+  document.getElementById('time-slider').max = state.totalHours - 1;
+
+  // Compute global min/max temps
+  let minT = Infinity, maxT = -Infinity;
+  for (const w of state.weatherData) {
+    for (const t of w.temps) {
+      if (t !== null) {
+        if (t < minT) minT = t;
+        if (t > maxT) maxT = t;
+      }
+    }
+  }
+  document.getElementById('min-temp').textContent = `${Math.round(minT)}°C`;
+  document.getElementById('max-temp').textContent = `${Math.round(maxT)}°C`;
+
+  // Add temperature range to the legend labels
+  const legendLabels = document.getElementById('legend-labels');
+  if (legendLabels) {
+    legendLabels.innerHTML = `<span>${Math.round(minT)}°</span><span>${Math.round(minT + (maxT-minT)/2)}°</span><span>${Math.round(maxT)}°</span>`;
+  }
+
+  return state.weatherData;
+}
+
+function getTempAtSample(sampleIdx, timeIdx) {
+  if (!state.weatherData || !state.weatherData[sampleIdx]) return null;
+  const t = state.weatherData[sampleIdx].temps[timeIdx];
+  return t !== undefined ? t : null;
+}
+
+function getInterpolatedTemp(segmentIdx, timeIdx) {
+  const info = state.segmentInfo[segmentIdx];
+  if (!info) return null;
+
+  const tBefore = getTempAtSample(info.sample_before, timeIdx);
+  const tAfter = getTempAtSample(info.sample_after, timeIdx);
+
+  if (tBefore === null && tAfter === null) return null;
+  if (tBefore === null) return tAfter;
+  if (tAfter === null) return tBefore;
+
+  return tBefore + info.factor * (tAfter - tBefore);
+}
+
+// ===========================================================================
+//  FIND THE FORECAST INDEX FOR THE CURRENT REAL-WORLD TIME
+//  Returns the index of the first forecast hour >= now, so past hours
+//  are skipped. Compares local time strings (same timezone as the route).
+// ===========================================================================
+function getCurrentTimeIndex() {
+  if (!state.weatherTimes || !state.weatherTimes.length) return 0;
+  const now = new Date();
+  const nowStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:00`;
+  for (let i = 0; i < state.weatherTimes.length; i++) {
+    if (state.weatherTimes[i] >= nowStr) return i;
+  }
+  return state.weatherTimes.length - 1;
+}
+
+// ===========================================================================
+//  MAP
+// ===========================================================================
+function initMap() {
+  const map = L.map('map', {
+    center: [46.5, 3.2],
+    zoom: 8,
+    zoomControl: true,
+    attributionControl: true,
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 18,
+  }).addTo(map);
+
+  state.map = map;
+
+  // Fit map to route bounds
+  const route = state.routeData.route_points;
+  const bounds = L.latLngBounds(route.map(p => [p[0], p[1]]));
+  map.fitBounds(bounds, { padding: [30, 30] });
+
+  // Hover tooltip
+  state.cursorMarker = L.circleMarker([0, 0], {
+    radius: 5, color: '#fff', fillColor: '#ffcc44', fillOpacity: 0.9,
+    weight: 2, opacity: 0,
+  }).addTo(map);
+
+  return map;
+}
+
+// ===========================================================================
+//  ROUTE SEGMENTS (colored polylines)
+// ===========================================================================
+function createRouteSegments() {
+  const route = state.routeData.route_points;
+  const segMap = state.segmentInfo;
+  const segments = [];
+
+  for (let i = 0; i < route.length - 1; i++) {
+    const latlngs = [
+      [route[i][0], route[i][1]],
+      [route[i+1][0], route[i+1][1]],
+    ];
+    const polyline = L.polyline(latlngs, {
+      weight: 4,
+      color: '#555',
+      opacity: 0.8,
+      smoothFactor: 0,
+    }).addTo(state.map);
+    segments.push(polyline);
+  }
+
+  state.segments = segments;
+  return segments;
+}
+
+function updateRouteColors(timeIdx) {
+  const n = state.segments.length;
+  for (let i = 0; i < n; i++) {
+    const temp = getInterpolatedTemp(i, timeIdx);
+    const color = temp !== null ? tempToColor(temp) : '#333';
+    state.segments[i].setStyle({ color });
+  }
+  // Also update temperature labels every 100 km
+  if (tempLabels.length > 0) updateTempLabels(timeIdx);
+}
+
+// ===========================================================================
+//  TEMPERATURE LABELS (every 100 km, offset beside the route)
+//  Show live temperature at each 100 km mark, updating during animation.
+//  Labels sit perpendicular to the route direction to avoid obscuring it.
+// ===========================================================================
+let tempLabels = [];
+let tempConnectors = []; // thin lines from route point to label
+
+function getRouteCoordAtDist(dist) {
+  const route = state.routeData.route_points;
+  const cumDist = state.routeData.cumulative_distances;
+  for (let j = 1; j < route.length; j++) {
+    if (cumDist[j] >= dist) {
+      const f = (dist - cumDist[j-1]) / (cumDist[j] - cumDist[j-1]);
+      return { 
+        lat: route[j-1][0] + f * (route[j][0] - route[j-1][0]),
+        lon: route[j-1][1] + f * (route[j][1] - route[j-1][1]),
+      };
+    }
+  }
+  const last = route[route.length - 1];
+  return { lat: last[0], lon: last[1] };
+}
+
+function findOrigSamplesBracketing(dist) {
+  const samples = state.routeData.samples;
+  let before = 0, after = samples.length - 1;
+  for (let si = 0; si < samples.length; si++) {
+    if (samples[si].dist <= dist) before = si;
+    if (samples[si].dist >= dist && after === samples.length - 1) after = si;
+  }
+  let factor = 0;
+  if (before !== after) {
+    factor = (dist - samples[before].dist) / (samples[after].dist - samples[before].dist);
+  }
+  return { before, after, factor };
+}
+
+/** Bearing from point a to b in degrees (0=North, clockwise). */
+function bearing(a, b) {
+  const dLon = (b.lon - a.lon) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(b.lat * Math.PI / 180);
+  const x = Math.cos(a.lat * Math.PI / 180) * Math.sin(b.lat * Math.PI / 180) -
+            Math.sin(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+/**
+ * Return a point offset perpendicular to `bearingDeg`, on the left side.
+ * offsetKm: how far to shift (≈12 km works well at zoom ~8).
+ */
+function offsetLeft(lat, lon, bearingDeg, offsetKm) {
+  const angle = (bearingDeg + 90) * Math.PI / 180; // left of travel direction
+  const R = 6371;
+  const dLat = (offsetKm / R) * Math.cos(angle);
+  const dLon = (offsetKm / R) * Math.sin(angle) / Math.cos(lat * Math.PI / 180);
+  return { lat: lat + dLat * 180 / Math.PI, lon: lon + dLon * 180 / Math.PI };
+}
+
+function createTempLabels() {
+  // Clean up previous labels/lines
+  for (const l of tempLabels) state.map.removeLayer(l.marker);
+  for (const c of tempConnectors) state.map.removeLayer(c);
+  tempLabels = [];
+  tempConnectors = [];
+
+  const data = state.routeData;
+  const route = data.route_points;
+  const totalDist = data.cumulative_distances[data.cumulative_distances.length - 1];
+  const OFFSET_KM = 14;
+
+  // Every 100 km from 0 to end
+  const positions = [];
+  for (let d = 0; d <= totalDist; d += 100) {
+    positions.push(d);
+  }
+  const lastPos = positions[positions.length - 1];
+  if (totalDist - lastPos > 10) positions.push(totalDist);
+
+  for (let i = 0; i < positions.length; i++) {
+    const dist = positions[i];
+    const coord = getRouteCoordAtDist(dist);
+    const bracketing = findOrigSamplesBracketing(dist);
+    const isEndpoint = (i === 0 || (i === positions.length - 1 && Math.abs(dist - totalDist) < 1));
+
+    // Determine route bearing at this point (look ±3 km along the route)
+    const dAhead = Math.min(dist + 3, totalDist);
+    const dBehind = Math.max(dist - 3, 0);
+    const ahead = getRouteCoordAtDist(dAhead);
+    const behind = getRouteCoordAtDist(dBehind);
+    const brg = bearing(behind, ahead);
+
+    // Offset the label to the left of the travel direction
+    const offset = offsetLeft(coord.lat, coord.lon, brg, OFFSET_KM);
+
+    // Distance label
+    let distLabel;
+    if (dist === 0) distLabel = 'Start';
+    else if (dist >= totalDist - 1) distLabel = `${Math.round(totalDist)}km`;
+    else distLabel = `${Math.round(dist)}km`;
+
+    // Small dot at the route point for reference
+    const dot = L.circleMarker([coord.lat, coord.lon], {
+      radius: 3, color: 'rgba(255,255,255,0.4)',
+      fillColor: 'rgba(255,255,255,0.2)', fillOpacity: 0.6,
+      weight: 1, opacity: 0.5,
+      interactive: false,
+    }).addTo(state.map);
+    tempConnectors.push(dot);
+
+    // Thin connector line from route point → label
+    const line = L.polyline([[coord.lat, coord.lon], [offset.lat, offset.lon]], {
+      color: 'rgba(255,255,255,0.2)', weight: 1, dashArray: '3,4',
+      interactive: false, opacity: 0.5,
+    }).addTo(state.map);
+    tempConnectors.push(line);
+
+    // The temperature badge at the offset position
+    const marker = L.marker([offset.lat, offset.lon], {
+      icon: L.divIcon({
+        className: 'temp-label-container',
+        html: `
+          <div class="temp-label-badge" data-idx="${i}">
+            <span class="temp-label-value">--°</span>
+            <span class="temp-label-dist">${distLabel}</span>
+          </div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      }),
+      interactive: false,
+      zIndexOffset: isEndpoint ? 1000 : 500,
+    }).addTo(state.map);
+
+    tempLabels.push({
+      marker,
+      origBefore: bracketing.before,
+      origAfter: bracketing.after,
+      factor: bracketing.factor,
+      dist,
+      isEndpoint,
+    });
+  }
+
+  updateTempLabels(state.currentTimeIndex || 0);
+}
+
+function updateTempLabels(timeIdx) {
+  for (const label of tempLabels) {
+    const tBefore = getTempAtSample(label.origBefore, timeIdx);
+    const tAfter = getTempAtSample(label.origAfter, timeIdx);
+    let temp = null;
+    if (tBefore !== null && tAfter !== null) {
+      temp = tBefore + label.factor * (tAfter - tBefore);
+    } else if (tBefore !== null) {
+      temp = tBefore;
+    } else if (tAfter !== null) {
+      temp = tAfter;
+    }
+
+    const el = label.marker.getElement();
+    if (!el) continue;
+    const valueEl = el.querySelector('.temp-label-value');
+    if (!valueEl) continue;
+    
+    if (temp !== null) {
+      valueEl.textContent = `${Math.round(temp)}°`;
+      valueEl.style.color = tempToColor(temp);
+    } else {
+      valueEl.textContent = '--°';
+      valueEl.style.color = '#666';
+    }
+  }
+}
+
+// ===========================================================================
+//  SAMPLE MARKERS (adjustable with interval slider)
+// ===========================================================================
+let sampleMarkerLayer = null;
+
+function addSampleMarkers(samples) {
+  if (sampleMarkerLayer) state.map.removeLayer(sampleMarkerLayer);
+  sampleMarkerLayer = L.layerGroup().addTo(state.map);
+
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i];
+    const isEndpoint = (i === 0 || i === samples.length - 1);
+    const m = L.circleMarker([s.lat, s.lon], {
+      radius: isEndpoint ? 5 : 3,
+      color: isEndpoint ? '#ffcc44' : 'rgba(255,255,255,0.3)',
+      fillColor: isEndpoint ? '#ffcc44' : 'rgba(255,255,255,0.15)',
+      fillOpacity: isEndpoint ? 0.8 : 0.4,
+      weight: isEndpoint ? 2 : 1,
+      opacity: 0.6,
+    });
+    m.bindTooltip(`<b>Pt ${i}</b>: ${s.dist.toFixed(0)} km · ${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}`, {
+      className: 'temp-tooltip', direction: 'top', offset: [0, -6],
+    });
+    sampleMarkerLayer.addLayer(m);
+  }
+}
+
+function updateSampleMarkers(newSamples) {
+  if (sampleMarkerLayer) state.map.removeLayer(sampleMarkerLayer);
+  sampleMarkerLayer = L.layerGroup().addTo(state.map);
+
+  for (let i = 0; i < newSamples.length; i++) {
+    // Get actual coordinates from route_data at this distance
+    const dist = newSamples[i].dist;
+    const data = state.routeData;
+    const route = data.route_points;
+    const cumDist = data.cumulative_distances;
+    
+    // Find position on route
+    let lat = route[0][0], lon = route[0][1];
+    for (let j = 1; j < route.length; j++) {
+      if (cumDist[j] >= dist) {
+        const f = (dist - cumDist[j-1]) / (cumDist[j] - cumDist[j-1]);
+        lat = route[j-1][0] + f * (route[j][0] - route[j-1][0]);
+        lon = route[j-1][1] + f * (route[j][1] - route[j-1][1]);
+        break;
+      }
+    }
+    
+    const isEndpoint = (i === 0 || i === newSamples.length - 1);
+    const m = L.circleMarker([lat, lon], {
+      radius: isEndpoint ? 5 : 3,
+      color: isEndpoint ? '#ffcc44' : 'rgba(255,255,255,0.25)',
+      fillColor: isEndpoint ? '#ffcc44' : 'rgba(255,255,255,0.1)',
+      fillOpacity: isEndpoint ? 0.8 : 0.3,
+      weight: isEndpoint ? 2 : 1,
+      opacity: 0.5,
+    });
+    m.bindTooltip(`Sample ${i} · ${dist.toFixed(0)} km`, {
+      className: 'temp-tooltip', direction: 'top', offset: [0, -6],
+    });
+    sampleMarkerLayer.addLayer(m);
+  }
+}
+
+// ===========================================================================
+//  SKY PANEL (sun/moon arc animation)
+//  Shows the sun rising/declining along a left-to-right arc, then replaced
+//  by the moon at night. Same size as the elevation profile, bottom-left.
+// ===========================================================================
+function lerpColor(c1, c2, t) {
+  const h1 = parseInt(c1.slice(1), 16), h2 = parseInt(c2.slice(1), 16);
+  const r1 = h1 >> 16, g1 = (h1 >> 8) & 0xFF, b1 = h1 & 0xFF;
+  const r2 = h2 >> 16, g2 = (h2 >> 8) & 0xFF, b2 = h2 & 0xFF;
+  return `rgb(${Math.round(r1 + t * (r2 - r1))},${Math.round(g1 + t * (g2 - g1))},${Math.round(b1 + t * (b2 - b1))})`;
+}
+
+function getSkyColors(timeOfDay) {
+  // Returns { top, bottom } for vertical gradient
+  if (timeOfDay < 6 || timeOfDay >= 21.5) {
+    return { top: '#0a0a2e', bottom: '#151540' };
+  } else if (timeOfDay < 7.5) {
+    const t = (timeOfDay - 6) / 1.5;
+    return {
+      top: lerpColor('#0a0a2e', '#4488cc', t),
+      bottom: lerpColor('#663322', '#88bbee', t),
+    };
+  } else if (timeOfDay < 20) {
+    return { top: '#4488cc', bottom: '#88bbee' };
+  } else {
+    const t = (timeOfDay - 20) / 1.5;
+    return {
+      top: lerpColor('#4488cc', '#0a0a2e', t),
+      bottom: lerpColor('#88bbee', '#663322', t),
+    };
+  }
+}
+
+function drawStars(ctx, w, h, ml, mt, mr, mb, opacity) {
+  if (opacity <= 0) return;
+  const plotW = w - ml - mr, plotH = h - mt - mb;
+  const stars = [
+    [0.10,0.15,1.2],[0.22,0.08,0.8],[0.35,0.20,1.5],[0.48,0.10,1.0],
+    [0.60,0.18,0.7],[0.72,0.06,1.3],[0.85,0.12,0.9],[0.15,0.35,0.6],
+    [0.55,0.30,1.1],[0.90,0.28,0.8],[0.30,0.40,1.0],[0.70,0.38,0.7],
+    [0.05,0.50,0.5],[0.42,0.45,0.6],[0.80,0.48,0.5],
+  ];
+  ctx.fillStyle = `rgba(255,255,255,${opacity * 0.5})`;
+  for (const [fx, fy, r] of stars) {
+    ctx.beginPath();
+    ctx.arc(ml + fx * plotW, mt + fy * plotH, r * 0.4, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+}
+
+function drawSkyPanel() {
+  const canvas = state.skyCanvas;
+  const ctx = state.skyCtx;
+  if (!ctx) return;
+
+  const w = canvas.width, h = canvas.height;
+  const ml = 0, mr = 0, mt = 6, mb = 0;
+  const plotW = w - ml - mr, plotH = h - mt - mb;
+
+  if (!state.weatherTimes) return;
+  const timeStr = state.weatherTimes[state.currentTimeIndex];
+  if (!timeStr) return;
+  const hour = parseInt(timeStr.substring(11, 13));
+  const minute = parseInt(timeStr.substring(14, 16));
+  const timeOfDay = hour + minute / 60;
+  const daytime = isDaytime(state.currentTimeIndex);
+
+  ctx.clearRect(0, 0, w, h);
+
+  // ── Sky background gradient ──
+  const sky = getSkyColors(timeOfDay);
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, sky.top);
+  grad.addColorStop(1, sky.bottom);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.roundRect(0, 0, w, h, 4);
+  ctx.fill();
+
+  // ── Stars ──
+  const starOpacity = (timeOfDay < 7.5) ? 1 - (timeOfDay - 6) / 1.5 :
+                      (timeOfDay > 20) ? (timeOfDay - 20) / 1.5 : 0;
+  drawStars(ctx, w, h, ml, mt, mr, mb, Math.max(0, Math.min(1, starOpacity)));
+
+  // ── No landscape — sun rises from bottom-left corner ──
+
+  // ── Sun arc — corner to corner, centered ──
+  const arcCx = w / 2;
+  const arcBottom = h;
+  const arcRx = w / 2 - 8;   // horizontal radius (8px inset so glow doesn't clip)
+  const arcRy = 58;           // vertical radius — arc height (higher = bigger arc)
+
+  // Draw the arc guideline (elliptical — flat arc that stays fully inside)
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath();
+  for (let t2 = 0; t2 <= 1; t2 += 0.02) {
+    const a2 = Math.PI * (1 - t2);
+    const x2 = arcCx + arcRx * Math.cos(a2);
+    const y2 = arcBottom - arcRy * Math.sin(a2);
+    if (t2 === 0) ctx.moveTo(x2, y2);
+    else ctx.lineTo(x2, y2);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ── Position the sun or moon on the arc ──
+  let t;
+  if (daytime) {
+    t = (timeOfDay - 6) / 15;  // 0 at 6:00, 1 at 21:00
+  } else {
+    // Night: normalize 21:00-6:00 to 0-1
+    t = timeOfDay >= 21 ? (timeOfDay - 21) / 9 : (timeOfDay + 3) / 9;
+  }
+  t = Math.max(0, Math.min(1, t));
+
+  const angle = Math.PI * (1 - t);
+  const originX = arcCx + arcRx * Math.cos(angle);
+  const originY = arcBottom - arcRy * Math.sin(angle);
+
+  if (daytime) {
+    // ── Sun ──
+    // Glow
+    const glowR = 16 + (1 - Math.abs(t - 0.5) * 2) * 6; // bigger at noon
+    const grad2 = ctx.createRadialGradient(originX, originY, 0, originX, originY, glowR);
+    grad2.addColorStop(0, 'rgba(255, 220, 50, 0.7)');
+    grad2.addColorStop(1, 'rgba(255, 220, 50, 0)');
+    ctx.fillStyle = grad2;
+    ctx.beginPath(); ctx.arc(originX, originY, glowR, 0, 2 * Math.PI); ctx.fill();
+
+    // Sun body (warm orange near horizon, yellow at noon)
+    const horizonFactor = 1 - Math.abs(t - 0.5) * 2;  // 0 at horizon, 1 at noon
+    const sunColor = lerpColor('#FF6633', '#FFD700', horizonFactor);
+    ctx.shadowColor = '#FFD700';
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = sunColor;
+    ctx.beginPath(); ctx.arc(originX, originY, 7, 0, 2 * Math.PI); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Rays
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+      const r1 = 9, r2 = 13;
+      ctx.beginPath();
+      ctx.moveTo(originX + Math.cos(a) * r1, originY + Math.sin(a) * r1);
+      ctx.lineTo(originX + Math.cos(a) * r2, originY + Math.sin(a) * r2);
+      ctx.stroke();
+    }
+  } else {
+    // ── Moon ──
+    // Subtle glow
+    const grad3 = ctx.createRadialGradient(originX, originY, 0, originX, originY, 14);
+    grad3.addColorStop(0, 'rgba(200, 200, 220, 0.3)');
+    grad3.addColorStop(1, 'rgba(200, 200, 220, 0)');
+    ctx.fillStyle = grad3;
+    ctx.beginPath(); ctx.arc(originX, originY, 14, 0, 2 * Math.PI); ctx.fill();
+
+    // Moon body
+    ctx.shadowColor = '#C8C8D0';
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = '#C8C8D0';
+    ctx.beginPath(); ctx.arc(originX, originY, 6.5, 0, 2 * Math.PI); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Crescent cut-out
+    ctx.fillStyle = sky.bottom;
+    ctx.beginPath();
+    ctx.arc(originX + 4, originY - 1.5, 5, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+
+  // ── Current time label (top-left) ──
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.font = 'bold 11px monospace';
+  ctx.fillStyle = daytime ? 'rgba(255,255,200,0.6)' : 'rgba(200,200,255,0.4)';
+  const hhmm = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  ctx.fillText(hhmm, 6, 2);
+
+  // Sun/moon icon next to the time
+  ctx.font = '12px sans-serif';
+  ctx.fillText(daytime ? '☀️' : '🌙', 50, 2);
+}
+
+function initSkyPanel() {
+  const container = document.getElementById('sky-container');
+  container.classList.add('visible');
+  const canvas = document.getElementById('sky-canvas');
+  state.skyCanvas = canvas;
+  state.skyCtx = canvas.getContext('2d');
+  resizeSkyCanvas();
+  drawSkyPanel();
+}
+
+function resizeSkyCanvas() {
+  const canvas = state.skyCanvas;
+  if (!canvas) return;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width - 12;
+  canvas.height = rect.height - 12;
+}
+
+// ===========================================================================
+//  MAP MOUSE INTERACTION
+// ===========================================================================
+function setupMapInteraction() {
+  const map = state.map;
+  let tooltip = null;
+
+  map.on('mousemove', function(e) {
+    const route = state.routeData.route_points;
+    const cumDist = state.cumDist;
+
+    // Find nearest point on route
+    let minDist = Infinity;
+    let nearestIdx = 0;
+    for (let i = 0; i < route.length; i++) {
+      const d = map.distance(e.latlng, [route[i][0], route[i][1]]);
+      if (d < minDist) { minDist = d; nearestIdx = i; }
+    }
+
+    // Only show if close enough to route
+    if (minDist > 2000) { // 2km threshold
+      if (tooltip) { map.closeTooltip(); tooltip = null; }
+      state.cursorMarker.setStyle({ opacity: 0 });
+      return;
+    }
+
+    const pt = route[nearestIdx];
+    const dist = cumDist[nearestIdx];
+    const ele = pt[2];
+
+    // Get temperature at this point (interpolate between nearest segment samples)
+    const segIdx = Math.min(nearestIdx, state.segments.length - 1);
+    const temp = getInterpolatedTemp(segIdx, state.currentTimeIndex);
+
+    const tempStr = temp !== null ? `${temp.toFixed(1)}°C` : '--°C';
+
+    if (tooltip) map.closeTooltip();
+    tooltip = L.tooltip({
+      className: 'temp-tooltip',
+      direction: 'top',
+      offset: [0, -10],
+      permanent: false,
+    })
+      .setLatLng([pt[0], pt[1]])
+      .setContent(`
+        <div class="temp-val">${tempStr}</div>
+        <div class="temp-detail">📍 ${dist.toFixed(0)} km · ⛰️ ${ele.toFixed(0)} m</div>
+      `)
+      .addTo(map);
+
+    // Cursor marker
+    state.cursorMarker.setLatLng([pt[0], pt[1]]);
+    state.cursorMarker.setStyle({ opacity: 1 });
+
+    // Update elevation profile
+    updateElevationHover(dist);
+    state.hoveredLatLng = { dist, idx: nearestIdx, temp };
+  });
+
+  map.on('mouseout', function() {
+    if (tooltip) { map.closeTooltip(); tooltip = null; }
+    state.cursorMarker.setStyle({ opacity: 0 });
+    clearElevationHover();
+  });
+}
+
+// ===========================================================================
+//  ELEVATION PROFILE (Canvas)
+// ===========================================================================
+function initElevationProfile() {
+  const container = document.getElementById('elevation-container');
+  container.classList.add('visible');
+  state.isElevationVisible = true;
+
+  const canvas = document.getElementById('elevation-canvas');
+  state.elevationCanvas = canvas;
+  state.elevCtx = canvas.getContext('2d');
+  
+  resizeElevationCanvas();
+  drawElevationProfile(null);
+  
+  // Mouse interaction on elevation profile
+  canvas.addEventListener('mousemove', onElevationMouseMove);
+  canvas.addEventListener('mouseleave', onElevationMouseLeave);
+}
+
+function resizeElevationCanvas() {
+  const canvas = state.elevationCanvas;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width - 12;
+  canvas.height = rect.height - 12;
+}
+
+function isDaytime(timeIdx) {
+  if (!state.weatherTimes || !state.weatherTimes[timeIdx]) return true;
+  const h = parseInt(state.weatherTimes[timeIdx].substring(11, 13));
+  // Day 06:00–20:59, Night 21:00–05:59 (July in France)
+  return h >= 6 && h < 21;
+}
+
+function drawElevationProfile(hoverDist) {
+  const canvas = state.elevationCanvas;
+  const ctx = state.elevCtx;
+  if (!ctx) return;
+
+  const w = canvas.width;
+  const h = canvas.height;
+  const data = state.routeData;
+  const elevations = state.elevations;
+  const cumDist = state.cumDist;
+  const totalDist = cumDist[cumDist.length - 1];
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Day/night background
+  const daytime = isDaytime(state.currentTimeIndex);
+  ctx.fillStyle = daytime ? 'rgba(40, 30, 10, 0.25)' : 'rgba(0, 0, 20, 0.35)';
+  ctx.fillRect(0, 0, w, h);
+
+  // Margins
+  const ml = 35, mr = 5, mt = 10, mb = 18;
+  const plotW = w - ml - mr;
+  const plotH = h - mt - mb;
+
+  const minEle = Math.min(...elevations) - 20;
+  const maxEle = Math.max(...elevations) + 50;
+  const eleRange = maxEle - minEle || 1;
+
+  function xForDist(d) { return ml + (d / totalDist) * plotW; }
+  function yForEle(e) { return mt + plotH - ((e - minEle) / eleRange) * plotH; }
+
+  // Draw grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  for (let d = 0; d <= totalDist; d += 50) {
+    const x = xForDist(d);
+    ctx.beginPath(); ctx.moveTo(x, mt); ctx.lineTo(x, mt + plotH); ctx.stroke();
+  }
+
+  // Fill under curve
+  ctx.beginPath();
+  ctx.moveTo(xForDist(0), mt + plotH);
+  for (let i = 0; i < elevations.length; i++) {
+    ctx.lineTo(xForDist(cumDist[i]), yForEle(elevations[i]));
+  }
+  ctx.lineTo(xForDist(totalDist), mt + plotH);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, mt, 0, mt + plotH);
+  grad.addColorStop(0, 'rgba(255,204,68,0.25)');
+  grad.addColorStop(1, 'rgba(255,204,68,0.02)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Draw elevation line
+  ctx.beginPath();
+  for (let i = 0; i < elevations.length; i++) {
+    const x = xForDist(cumDist[i]);
+    const y = yForEle(elevations[i]);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#ffcc44';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Stage separators
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  for (const stage of data.stages) {
+    const dist = cumDist[stage.start_idx];
+    const x = xForDist(dist);
+    ctx.beginPath(); ctx.moveTo(x, mt); ctx.lineTo(x, mt + plotH); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Labels: elevation
+  ctx.fillStyle = '#888';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let e = Math.ceil(minEle / 200) * 200; e <= maxEle; e += 200) {
+    const y = yForEle(e);
+    if (y >= mt && y <= mt + plotH) {
+      ctx.fillText(`${e}m`, ml - 4, y);
+      ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(ml, y); ctx.lineTo(w - mr, y); ctx.stroke();
+    }
+  }
+
+  // Labels: distance
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (let d = 0; d <= totalDist; d += 100) {
+    const x = xForDist(d);
+    ctx.fillText(`${d}km`, x, mt + plotH + 3);
+  }
+
+  // Hover cursor
+  if (hoverDist !== null && hoverDist !== undefined) {
+    const hx = xForDist(hoverDist);
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(hx, mt); ctx.lineTo(hx, mt + plotH); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Find elevation at hover
+    let EleAtDist = 0;
+    for (let i = 1; i < cumDist.length; i++) {
+      if (cumDist[i] >= hoverDist) {
+        const f = (hoverDist - cumDist[i-1]) / (cumDist[i] - cumDist[i-1]);
+        EleAtDist = elevations[i-1] + f * (elevations[i] - elevations[i-1]);
+        break;
+      }
+    }
+    const hy = yForEle(EleAtDist);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(hx, hy, 4, 0, 2*Math.PI); ctx.fill();
+    
+    // Show elevation value
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`${Math.round(EleAtDist)}m`, hx + 8, hy - 2);
+  }
+
+}
+
+function updateElevationHover(dist) {
+  drawElevationProfile(dist);
+}
+
+function clearElevationHover() {
+  drawElevationProfile(null);
+}
+
+function onElevationMouseMove(e) {
+  const canvas = state.elevationCanvas;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const mx = (e.clientX - rect.left) * scaleX;
+  
+  const ml = 35, mr = 5;
+  const plotW = canvas.width - ml - mr;
+  const totalDist = state.cumDist[state.cumDist.length - 1];
+  
+  const dist = ((mx - ml) / plotW) * totalDist;
+  if (dist < 0 || dist > totalDist) { clearElevationHover(); return; }
+
+  drawElevationProfile(dist);
+
+  // Highlight on map
+  const route = state.routeData.route_points;
+  const cumDist = state.cumDist;
+  for (let i = 1; i < cumDist.length; i++) {
+    if (cumDist[i] >= dist) {
+      const f = (dist - cumDist[i-1]) / (cumDist[i] - cumDist[i-1]);
+      const lat = route[i-1][0] + f * (route[i][0] - route[i-1][0]);
+      const lng = route[i-1][1] + f * (route[i][1] - route[i-1][1]);
+      state.cursorMarker.setLatLng([lat, lng]);
+      state.cursorMarker.setStyle({ opacity: 1 });
+      break;
+    }
+  }
+}
+
+function onElevationMouseLeave(e) {
+  clearElevationHover();
+  state.cursorMarker.setStyle({ opacity: 0 });
+}
+
+// ===========================================================================
+//  REFRESH WEATHER DATA
+// ===========================================================================
+async function refreshWeather() {
+  const btn = document.getElementById('refresh-btn');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = '⟳';
+  setStatus('Refreshing weather data…');
+
+  try {
+    // Clear the cache for current samples
+    const samples = state.routeData.samples;
+    const cacheKey = getCacheKey(samples);
+    localStorage.removeItem(cacheKey);
+
+    // Re-fetch
+    const weatherResp = await fetchWeatherData(samples);
+    extractWeatherData(weatherResp, samples);
+
+    // Start at current real-world time, skip past hours
+    state.currentTimeIndex = Math.min(getCurrentTimeIndex(), state.totalHours - 1);
+    document.getElementById('time-slider').max = state.totalHours - 1;
+    document.getElementById('time-slider').value = state.currentTimeIndex;
+    updateTimeDisplay();
+    updateRouteColors(state.currentTimeIndex);
+    drawElevationProfile(state.hoveredLatLng ? state.hoveredLatLng.dist : null);
+    drawSkyPanel();
+
+    setStatus(`Weather refreshed — ${state.totalHours}h forecast`);
+  } catch (err) {
+    setStatus(`Refresh failed: ${err.message}`);
+    console.error(err);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '↻';
+}
+
+// ===========================================================================
+//  ANIMATION CONTROLS
+// ===========================================================================
+function initControls() {
+  const slider = document.getElementById('time-slider');
+  const playBtn = document.getElementById('play-btn');
+  const display = document.getElementById('time-display');
+
+  slider.addEventListener('input', function() {
+    state.currentTimeIndex = parseInt(this.value);
+    updateTimeDisplay();
+    updateRouteColors(state.currentTimeIndex);
+    // Redraw panels
+    const hoverDist = state.hoveredLatLng ? state.hoveredLatLng.dist : null;
+    drawElevationProfile(hoverDist);
+    drawSkyPanel();
+  });
+
+  playBtn.addEventListener('click', function() {
+    if (state.isPlaying) pauseAnimation();
+    else startAnimation();
+  });
+
+  // Speed buttons
+  document.querySelectorAll('[data-speed]').forEach(btn => {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('[data-speed]').forEach(b => b.classList.remove('active-speed'));
+      this.classList.add('active-speed');
+      state.speed = parseFloat(this.dataset.speed);
+    });
+  });
+  // Default speed
+  document.querySelector('[data-speed="1"]').classList.add('active-speed');
+
+  // Interval slider
+  document.getElementById('interval-slider').addEventListener('input', function() {
+    const val = parseInt(this.value);
+    document.getElementById('interval-value').textContent = val;
+    state.samplingInterval = val;
+    // Re-sample and rebuild segments
+    rebuildWithInterval(val);
+  });
+
+  // Refresh button
+  document.getElementById('refresh-btn').addEventListener('click', function() {
+    refreshWeather();
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === ' ' || e.key === 'Space') {
+      e.preventDefault();
+      playBtn.click();
+    }
+    if (e.key === 'ArrowRight') {
+      slider.value = Math.min(parseInt(slider.value) + 1, state.totalHours - 1);
+      slider.dispatchEvent(new Event('input'));
+    }
+    if (e.key === 'ArrowLeft') {
+      slider.value = Math.max(parseInt(slider.value) - 1, 0);
+      slider.dispatchEvent(new Event('input'));
+    }
+  });
+}
+
+function updateTimeDisplay() {
+  if (!state.weatherTimes) return;
+  const timeStr = state.weatherTimes[state.currentTimeIndex] || '--';
+  // Format: "2026-07-05T14:00" → "Jul 5, 14:00"
+  const d = new Date(timeStr + (timeStr.includes('Z') ? '' : 'Z'));
+  const display = document.getElementById('time-display');
+  const options = { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+  const icon = isDaytime(state.currentTimeIndex) ? '☀️' : '🌙';
+  display.textContent = `${icon} ${d.toLocaleDateString('en-US', options)}`;
+}
+
+function startAnimation() {
+  if (state.isPlaying) return;
+  state.isPlaying = true;
+  document.getElementById('play-btn').textContent = '⏸';
+  document.getElementById('play-btn').classList.add('active');
+  stepAnimation();
+}
+
+function stepAnimation() {
+  if (!state.isPlaying) return;
+  
+  state.currentTimeIndex++;
+  if (state.currentTimeIndex >= state.totalHours) {
+    state.currentTimeIndex = 0;
+  }
+
+  document.getElementById('time-slider').value = state.currentTimeIndex;
+  updateTimeDisplay();
+  updateRouteColors(state.currentTimeIndex);
+  // Redraw panels during animation
+  drawElevationProfile(state.hoveredLatLng ? state.hoveredLatLng.dist : null);
+  drawSkyPanel();
+
+  // Speed: 1× = 1 step per second, 2× = 2 steps per second, etc.
+  const interval = 1000 / state.speed;
+  state.animFrameId = setTimeout(stepAnimation, interval);
+}
+
+function pauseAnimation() {
+  state.isPlaying = false;
+  if (state.animFrameId) {
+    clearTimeout(state.animFrameId);
+    state.animFrameId = null;
+  }
+  document.getElementById('play-btn').textContent = '▶';
+  document.getElementById('play-btn').classList.remove('active');
+}
+
+// ===========================================================================
+//  REBUILD WITH NEW INTERVAL
+//  Re-samples the route and re-interpolates colors from existing weather data
+// ===========================================================================
+function rebuildWithInterval(newIntervalKm) {
+  const data = state.routeData;
+  const route = data.route_points;
+  const cumDist = data.cumulative_distances;
+  const totalDist = cumDist[cumDist.length - 1];
+  const origSamples = data.samples;
+
+  // The segment colors are ALWAYS interpolated from the original fetched
+  // weather data (50km sample points). The interval slider just controls
+  // how many display markers are shown on the map.
+  //
+  // Rebuild segment mapping using ORIGINAL sample distances for correct
+  // temperature interpolation, regardless of display interval.
+  const newMapping = [];
+  for (let i = 0; i < route.length - 1; i++) {
+    const midDist = (cumDist[i] + cumDist[i+1]) / 2;
+    let origBefore = 0, origAfter = origSamples.length - 1;
+    for (let si = 0; si < origSamples.length; si++) {
+      if (origSamples[si].dist <= midDist) origBefore = si;
+      if (origSamples[si].dist >= midDist && origAfter === origSamples.length - 1) origAfter = si;
+    }
+    let factor = 0;
+    if (origBefore !== origAfter) {
+      const dBefore = origSamples[origBefore].dist;
+      const dAfter = origSamples[origAfter].dist;
+      factor = (midDist - dBefore) / (dAfter - dBefore);
+    }
+    newMapping.push({ sample_before: origBefore, sample_after: origAfter, factor });
+  }
+  state.segmentInfo = newMapping;
+  updateRouteColors(state.currentTimeIndex);
+
+  // Generate display markers at the chosen interval
+  const markers = [];
+  markers.push({ dist: 0 });
+  let target = newIntervalKm;
+  while (target < totalDist - 0.01) {
+    markers.push({ dist: target });
+    target += newIntervalKm;
+  }
+  markers.push({ dist: totalDist });
+  updateSampleMarkers(markers);
+
+  setStatus(`Display interval: ${newIntervalKm} km (${markers.length} markers, ${origSamples.length} weather points)`);
+}
+
+// ===========================================================================
+//  UI HELPERS
+// ===========================================================================
+function setLoadMsg(msg) {
+  document.getElementById('load-msg').textContent = msg;
+}
+function setLoadSub(sub) {
+  document.getElementById('load-sub').textContent = sub;
+}
+function setLoadProgress(pct) {
+  document.getElementById('load-progress').style.width = `${pct}%`;
+}
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+function hideLoading() {
+  document.getElementById('loading').style.display = 'none';
+}
+
+// ===========================================================================
+//  TEMPERATURE LEGEND
+// ===========================================================================
+function updateLegend(timeIdx) {
+  // Already handled by the static gradient in CSS; we update the range labels
+}
+
+// ===========================================================================
+//  WINDOW RESIZE
+// ===========================================================================
+window.addEventListener('resize', function() {
+  if (state.elevationCanvas) {
+    resizeElevationCanvas();
+    drawElevationProfile(null);
+  }
+  if (state.skyCanvas) {
+    resizeSkyCanvas();
+    drawSkyPanel();
+  }
+});
+
+// ===========================================================================
+//  MAIN INIT
+// ===========================================================================
+async function init() {
+  try {
+    // 1. Load route data
+    const routeData = await loadRouteData();
+
+    // 2. Fetch weather data
+    const weatherResp = await fetchWeatherData(routeData.samples);
+    setLoadMsg('Processing weather data…');
+    extractWeatherData(weatherResp, routeData.samples);
+    setLoadProgress(60);
+
+    // 3. Init map
+    setLoadMsg('Building map…');
+    initMap();
+    setLoadProgress(75);
+
+    // 4. Create route segments
+    createRouteSegments();
+    setLoadProgress(85);
+
+    // 5. Add temperature labels every 100 km
+    createTempLabels();
+
+    // 6. Color route starting at current real-world time
+    const initialTimeIdx = getCurrentTimeIndex();
+    state.currentTimeIndex = initialTimeIdx;
+    updateRouteColors(initialTimeIdx);
+    document.getElementById('time-slider').value = initialTimeIdx;
+    setLoadProgress(95);
+
+    // 7. Elevation profile
+    initElevationProfile();
+
+    // 8. Sky panel (sun/moon arc)
+    initSkyPanel();
+
+    // 9. Interaction
+    setupMapInteraction();
+
+    // 10. Controls
+    initControls();
+    updateTimeDisplay();
+
+    // 10. Initial sample markers
+    addSampleMarkers(routeData.samples);
+
+    // 11. Done
+    setLoadProgress(100);
+    hideLoading();
+    setStatus(`Ready · ${routeData.samples.length} forecast points · ${state.totalHours}h forecast`);
+
+    // Set last-updated timestamp
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' });
+    const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('last-updated').textContent = `Updated: ${dateStr} ${timeStr}`;
+
+    // Update subtitle with sample count
+    document.querySelector('.subtitle').textContent = 
+      `Melun → Nîmes · ${routeData.total_distance.toFixed(0)} km · ${routeData.samples.length} samples`;
+
+  } catch (err) {
+    setLoadMsg(`❌ Error: ${err.message}`);
+    setLoadSub('Check the console for details. Make sure route_data.json exists and the server is running.');
+    console.error(err);
+  }
+}
+
+// Start
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
