@@ -1397,7 +1397,7 @@ function updateTimeDisplay() {
   if (!state.weatherTimes) return;
   const timeStr = state.weatherTimes[state.currentTimeIndex] || '--';
   // Format: "2026-07-05T14:00" → "Jul 5, 14:00"
-  const d = new Date(timeStr + (timeStr.includes('Z') ? '' : 'Z'));
+  const d = new Date(timeStr);
   const display = document.getElementById('time-display');
   const options = { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
   const icon = isDaytime(state.currentTimeIndex) ? '☀️' : '🌙';
