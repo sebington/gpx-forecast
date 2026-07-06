@@ -27,6 +27,19 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 #top-bar .title { font-weight: 700; font-size: 15px; color: #fff; }
 #top-bar .title span { color: #ffcc44; }
 #top-bar .subtitle { color: #999; font-size: 12px; }
+#top-bar .btn.small { font-size: 11px; padding: 3px 10px; }
+
+/* Drag-drop overlay */
+#drop-overlay {
+  position: absolute; inset: 0; z-index: 3000;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(10, 10, 30, 0.8);
+  border: 3px dashed #ffcc44; border-radius: 12px;
+  margin: 12px; pointer-events: none;
+}
+#drop-overlay.visible { display: flex; }
+#drop-overlay .msg { font-size: 18px; color: #ffcc44; font-weight: 600; }
+#drop-overlay .sub { font-size: 13px; color: #aaa; margin-top: 4px; }
 
 /* Bottom panel */
 #bottom-panel {
@@ -208,6 +221,8 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
     <div id="top-bar">
       <div class="title">🚴 GPX Temperature Forecast</div>
       <div class="subtitle">Plan your bikepacking trips</div>
+      <button class="btn small" id="open-gpx-btn" title="Open a GPX file">📂 Open GPX</button>
+      <input type="file" accept=".gpx,.xml" id="gpx-file-input" style="display:none">
     </div>
 
     <div id="elevation-container">
@@ -223,6 +238,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <div class="msg" id="load-msg">Loading route data…</div>
       <div class="sub" id="load-sub"></div>
       <div class="progress-bar"><div class="progress-fill" id="load-progress"></div></div>
+    </div>
+
+    <div id="drop-overlay">
+      <div><div class="msg">📂 Drop GPX file here</div><div class="sub">.gpx files only</div></div>
     </div>
   </div>
 
@@ -341,6 +360,162 @@ function tempToColor(temp) {
 }
 
 function rgbStr(c) { return `rgb(${c.r},${c.g},${c.b})`; }
+
+// ===========================================================================
+//  GPX PARSING (client-side, ported from prepare_data.py)
+// ===========================================================================
+const GPX_MAX_POINTS = 1000;
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dlat = (lat2 - lat1) * Math.PI / 180;
+  const dlon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dlat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dlon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function interpolatePoint(p1, p2, frac) {
+  return [
+    p1[0] + frac * (p2[0] - p1[0]),
+    p1[1] + frac * (p2[1] - p1[1]),
+    p1[2] + frac * (p2[2] - p1[2]),
+  ];
+}
+
+function parseGpxFile(xmlText) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, 'text/xml');
+
+  const parseError = doc.querySelector('parsererror');
+  if (parseError) throw new Error('Invalid GPX file');
+
+  const trks = doc.getElementsByTagNameNS('*', 'trk');
+  if (!trks.length) throw new Error('No <trk> elements found in GPX file');
+
+  const routePoints = [];
+  const stages = [];
+
+  for (const trk of trks) {
+    const nameEl = trk.getElementsByTagNameNS('*', 'name')[0];
+    const name = nameEl ? nameEl.textContent : 'Unknown';
+    const stageStart = routePoints.length;
+
+    const trksegs = trk.getElementsByTagNameNS('*', 'trkseg');
+    for (const seg of trksegs) {
+      const trkpts = seg.getElementsByTagNameNS('*', 'trkpt');
+      for (const pt of trkpts) {
+        const lat = parseFloat(pt.getAttribute('lat'));
+        const lon = parseFloat(pt.getAttribute('lon'));
+        const eleEl = pt.getElementsByTagNameNS('*', 'ele')[0];
+        const ele = eleEl ? parseFloat(eleEl.textContent) : 0;
+        routePoints.push([lat, lon, ele]);
+      }
+    }
+
+    const stageEnd = routePoints.length - 1;
+    if (stageEnd >= stageStart) {
+      stages.push({ name, start_idx: stageStart, end_idx: stageEnd });
+    }
+  }
+
+  if (routePoints.length === 0) throw new Error('No track points found in GPX');
+  if (routePoints.length > GPX_MAX_POINTS) {
+    throw new Error(`This GPX has ${routePoints.length} track points (max: ${GPX_MAX_POINTS}). Please use a simplified route.`);
+  }
+
+  const cumDist = [0];
+  for (let i = 1; i < routePoints.length; i++) {
+    const d = haversineKm(routePoints[i-1][0], routePoints[i-1][1], routePoints[i][0], routePoints[i][1]);
+    cumDist.push(cumDist[cumDist.length-1] + d);
+  }
+
+  const totalDist = cumDist[cumDist.length - 1];
+
+  return { routePoints, stages, cumDist, totalDist };
+}
+
+function sampleRouteGpx(routePoints, cumDist, totalDist, intervalKm) {
+  const samples = [];
+
+  samples.push({
+    idx: 0, lat: routePoints[0][0], lon: routePoints[0][1],
+    ele: routePoints[0][2], dist: 0,
+  });
+
+  let target = intervalKm;
+  while (target < totalDist - 0.01) {
+    for (let i = 1; i < routePoints.length; i++) {
+      if (cumDist[i] >= target) {
+        const frac = (target - cumDist[i-1]) / (cumDist[i] - cumDist[i-1]);
+        const pt = interpolatePoint(routePoints[i-1], routePoints[i], frac);
+        samples.push({
+          idx: i - 1 + frac, lat: pt[0], lon: pt[1],
+          ele: pt[2], dist: Math.round(target * 10) / 10,
+        });
+        break;
+      }
+    }
+    target += intervalKm;
+  }
+
+  const last = routePoints.length - 1;
+  samples.push({
+    idx: last, lat: routePoints[last][0], lon: routePoints[last][1],
+    ele: routePoints[last][2], dist: Math.round(totalDist * 10) / 10,
+  });
+
+  return samples;
+}
+
+function buildSegmentMappingGpx(routePoints, cumDist, samples) {
+  const mapping = [];
+  for (let i = 0; i < routePoints.length - 1; i++) {
+    const midDist = (cumDist[i] + cumDist[i+1]) / 2;
+    let before = 0, after = samples.length - 1;
+    for (let si = 0; si < samples.length; si++) {
+      if (samples[si].dist <= midDist) before = si;
+      if (samples[si].dist >= midDist && after === samples.length - 1) after = si;
+    }
+    let factor = 0;
+    if (before !== after) {
+      factor = (midDist - samples[before].dist) / (samples[after].dist - samples[before].dist);
+    }
+    mapping.push({ sample_before: before, sample_after: after, factor, dist_mid: Math.round(midDist * 10) / 10 });
+  }
+  return mapping;
+}
+
+async function loadFromGpxFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const xmlText = e.target.result;
+        const { routePoints, stages, cumDist, totalDist } = parseGpxFile(xmlText);
+
+        const interval = 50;
+        const samples = sampleRouteGpx(routePoints, cumDist, totalDist, interval);
+        const segMap = buildSegmentMappingGpx(routePoints, cumDist, samples);
+
+        const data = {
+          route_points: routePoints,
+          cumulative_distances: cumDist.map(d => Math.round(d * 1000) / 1000),
+          total_distance: Math.round(totalDist * 10) / 10,
+          stages,
+          sampling_interval_km: interval,
+          samples,
+          segment_mapping: segMap,
+        };
+
+        resolve(data);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsText(file);
+  });
+}
 
 // ===========================================================================
 //  DATA LOADING
@@ -1330,7 +1505,12 @@ async function refreshWeather() {
 // ===========================================================================
 //  ANIMATION CONTROLS
 // ===========================================================================
+let controlsInitialized = false;
+
 function initControls() {
+  if (controlsInitialized) return;
+  controlsInitialized = true;
+
   const slider = document.getElementById('time-slider');
   const playBtn = document.getElementById('play-btn');
   const display = document.getElementById('time-display');
@@ -1533,69 +1713,136 @@ window.addEventListener('resize', function() {
 });
 
 // ===========================================================================
+//  INIT APP (shared between default route and GPX file load)
+// ===========================================================================
+async function initApp(routeData) {
+  // 2. Fetch weather data
+  const weatherResp = await fetchWeatherData(routeData.samples);
+  setLoadMsg('Processing weather data…');
+  extractWeatherData(weatherResp, routeData.samples);
+  setLoadProgress(60);
+
+  // 3. Init map
+  setLoadMsg('Building map…');
+  initMap();
+  setLoadProgress(75);
+
+  // 4. Create route segments
+  createRouteSegments();
+  setLoadProgress(85);
+
+  // 5. Add temperature labels every 100 km
+  createTempLabels();
+
+  // 6. Color route starting at current real-world time
+  const initialTimeIdx = getCurrentTimeIndex();
+  state.currentTimeIndex = initialTimeIdx;
+  updateRouteColors(initialTimeIdx);
+  document.getElementById('time-slider').value = initialTimeIdx;
+  setLoadProgress(95);
+
+  // 7. Elevation profile
+  initElevationProfile();
+
+  // 8. Sky panel (sun/moon arc)
+  initSkyPanel();
+
+  // 9. Interaction
+  setupMapInteraction();
+
+  // 10. Controls
+  initControls();
+  updateTimeDisplay();
+
+  // 10. Initial sample markers
+  addSampleMarkers(routeData.samples);
+
+  // 11. Done
+  setLoadProgress(100);
+  hideLoading();
+  setStatus(`Ready · ${routeData.samples.length} forecast points · ${state.totalHours}h forecast`);
+
+  // Set last-updated timestamp
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  document.getElementById('last-updated').textContent = `Updated: ${dateStr} ${timeStr}`;
+}
+
+// ===========================================================================
+//  OPEN GPX FILE
+// ===========================================================================
+async function handleGpxFile(file) {
+  pauseAnimation();
+
+  const loading = document.getElementById('loading');
+  loading.style.display = 'flex';
+  setLoadMsg('Parsing GPX file…');
+  setLoadSub('');
+  setLoadProgress(10);
+
+  try {
+    const routeData = await loadFromGpxFile(file);
+    setLoadProgress(30);
+
+    // Tear down old map and state
+    if (state.map) {
+      state.map.remove();
+      state.map = null;
+    }
+    state.segments = [];
+    state.segmentInfo = [];
+    state.weatherData = null;
+    state.weatherTimes = null;
+    state.currentTimeIndex = 0;
+    state.isPlaying = false;
+    if (state.animFrameId) { clearTimeout(state.animFrameId); state.animFrameId = null; }
+
+    // Reset module-level label/connector arrays
+    for (const l of tempLabels) { /* already removed with map */ }
+    for (const c of tempConnectors) { /* already removed with map */ }
+    tempLabels.length = 0;
+    tempConnectors.length = 0;
+
+    // Set new route data
+    state.routeData = routeData;
+    state.samplingInterval = routeData.sampling_interval_km || 50;
+    state.elevations = routeData.route_points.map(p => p[2]);
+    state.cumDist = routeData.cumulative_distances;
+    state.segmentInfo = routeData.segment_mapping;
+
+    document.getElementById('interval-value').textContent = state.samplingInterval;
+    document.getElementById('interval-slider').value = state.samplingInterval;
+
+    // Update subtitle with route info
+    const s0 = routeData.stages[0];
+    const s1 = routeData.stages[routeData.stages.length - 1];
+    const routeName = s0 ? `${s0.name} → ${s1.name}` : 'Custom Route';
+    document.querySelector('.subtitle').textContent =
+      `${routeName} · ${routeData.total_distance.toFixed(0)} km · ${routeData.samples.length} samples`;
+
+    await initApp(routeData);
+  } catch (err) {
+    setLoadMsg(`❌ ${err.message}`);
+    setLoadSub(err.message.includes('GPX') ? 'Make sure the file is a valid .gpx file.' : '');
+    loading.style.display = 'flex';
+    console.error(err);
+  }
+}
+
+// ===========================================================================
 //  MAIN INIT
 // ===========================================================================
 async function init() {
   try {
-    // 1. Load route data
+    // 1. Load default route data
     const routeData = await loadRouteData();
 
-    // 2. Fetch weather data
-    const weatherResp = await fetchWeatherData(routeData.samples);
-    setLoadMsg('Processing weather data…');
-    extractWeatherData(weatherResp, routeData.samples);
-    setLoadProgress(60);
-
-    // 3. Init map
-    setLoadMsg('Building map…');
-    initMap();
-    setLoadProgress(75);
-
-    // 4. Create route segments
-    createRouteSegments();
-    setLoadProgress(85);
-
-    // 5. Add temperature labels every 100 km
-    createTempLabels();
-
-    // 6. Color route starting at current real-world time
-    const initialTimeIdx = getCurrentTimeIndex();
-    state.currentTimeIndex = initialTimeIdx;
-    updateRouteColors(initialTimeIdx);
-    document.getElementById('time-slider').value = initialTimeIdx;
-    setLoadProgress(95);
-
-    // 7. Elevation profile
-    initElevationProfile();
-
-    // 8. Sky panel (sun/moon arc)
-    initSkyPanel();
-
-    // 9. Interaction
-    setupMapInteraction();
-
-    // 10. Controls
-    initControls();
-    updateTimeDisplay();
-
-    // 10. Initial sample markers
-    addSampleMarkers(routeData.samples);
-
-    // 11. Done
-    setLoadProgress(100);
-    hideLoading();
-    setStatus(`Ready · ${routeData.samples.length} forecast points · ${state.totalHours}h forecast`);
-
-    // Set last-updated timestamp
-    const now = new Date();
-    const dateStr = now.toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' });
-    const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    document.getElementById('last-updated').textContent = `Updated: ${dateStr} ${timeStr}`;
-
-    // Update subtitle with sample count
+    // Update subtitle with route name
     document.querySelector('.subtitle').textContent = 
-      `Melun → Nîmes · ${routeData.total_distance.toFixed(0)} km · ${routeData.samples.length} samples`;
+      `${routeData.stages[0].name} → ${routeData.stages[routeData.stages.length-1].name} · ${routeData.total_distance.toFixed(0)} km · ${routeData.samples.length} samples`;
 
+    await initApp(routeData);
   } catch (err) {
     setLoadMsg(`❌ Error: ${err.message}`);
     setLoadSub('Check the console for details. Make sure route_data.json exists and the server is running.');
@@ -1603,8 +1850,63 @@ async function init() {
   }
 }
 
+// ===========================================================================
+//  FILE INPUT + DRAG-DROP WIRING
+// ===========================================================================
+function setupFileInput() {
+  const btn = document.getElementById('open-gpx-btn');
+  const fileInput = document.getElementById('gpx-file-input');
+  const dropOverlay = document.getElementById('drop-overlay');
+  let dragCounter = 0;
+
+  btn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', function() {
+    if (this.files && this.files[0]) {
+      handleGpxFile(this.files[0]);
+      this.value = ''; // reset so same file can be re-selected
+    }
+  });
+
+  // Drag-drop on the whole window
+  document.addEventListener('dragenter', function(e) {
+    e.preventDefault();
+    dragCounter++;
+    if (dragCounter === 1) dropOverlay.classList.add('visible');
+  });
+
+  document.addEventListener('dragleave', function(e) {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter <= 0) { dragCounter = 0; dropOverlay.classList.remove('visible'); }
+  });
+
+  document.addEventListener('dragover', function(e) {
+    e.preventDefault();
+  });
+
+  document.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dragCounter = 0;
+    dropOverlay.classList.remove('visible');
+    const files = e.dataTransfer.files;
+    if (files && files[0]) {
+      const file = files[0];
+      if (file.name.endsWith('.gpx') || file.name.endsWith('.xml')) {
+        handleGpxFile(file);
+      } else {
+        setLoadMsg('❌ Please drop a .gpx file');
+        setTimeout(() => { hideLoading(); }, 2000);
+      }
+    }
+  });
+}
+
 // Start
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', function() {
+  init();
+  setupFileInput();
+});
 </script>
 </body>
 </html>
