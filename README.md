@@ -1,21 +1,26 @@
 # 🚴 GPX Temperature Forecast
 
-Permet de visualiser les températures prévues le long d'un itinéraire (vélo par ex.) à partir d'un fichier GPX.
+Permet de visualiser les températures prévues le long d'un itinéraire à partir d'un fichier GPX.
 
 Les prévisions sont données pour les 16 jours à venir.
 
 Voir la version en ligne : https://sebington.github.io/gpx-forecast/
 
-## Features
+## Fonctionnalités
 
-- **Open any `.gpx` file** — drag & drop or click the button. All parsing happens in your browser.
-- **16-day hourly forecast** — free [Open-Meteo](https://open-meteo.com) API, cached locally
-- **Live colouring** — route segments coloured by temperature, animatable hour by hour
-- **Day and night** — sky panel shows the sun position for any forecast hour
-- **Elevation profile** — interactive chart, hover to see elevation at any point
-- **Temperature labels** — 10 evenly spaced labels on the route, colour-coded and live
-- **Keyboard shortcuts** — `Space` to play/pause, `←` / `→` to step
+- **Ouvrez n'importe quel fichier `.gpx`** — glissez-déposez ou cliquez sur le bouton. Toute l'analyse se fait dans votre navigateur.
+- **Prévisions sur 16 jours** — API gratuite [Open-Meteo](https://open-meteo.com), mise en cache localement
+- **Coloration en direct** — segments de l'itinéraire colorés selon la température, animables heure par heure
+- **Jour et nuit** — le panneau ciel permet d'avoir un aperçu rapide du moment de la journée ou de la nuit
+- **Profil d'élévation** — graphique interactif, survolez pour voir l'élévation à n'importe quel point
+- **Étiquettes de température** — 10 étiquettes réparties uniformément sur l'itinéraire, colorées et en direct
+- **Raccourcis clavier** — `Espace` pour lecture/pause, `←` / `→` pour avancer pas à pas
+- **Passer la souris au dessus de la trace** — donne un aperçu de la température à cet endroit
 
-## Tech
+## Limitations
 
-Leaflet · OpenStreetMap · Open-Meteo · vanilla JS · zero build tools
+- **Nombre maximum de points** — le fichier GPX doit faire 1500 points maximum
+
+## Technos utilisées
+
+Leaflet · OpenStreetMap · Open-Meteo · JS vanilla · sans outil de build
