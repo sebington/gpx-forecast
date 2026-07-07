@@ -202,6 +202,66 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 #loading .progress-bar { width: 300px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
 #loading .progress-fill { height: 100%; width: 0%; background: #ffcc44; border-radius: 2px; transition: width 0.3s; }
 
+/* Stats Modal */
+#stats-modal {
+  position: absolute; inset: 0; z-index: 4000;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(5, 5, 20, 0.75);
+  backdrop-filter: blur(4px);
+}
+#stats-modal.visible { display: flex; }
+#stats-content {
+  background: rgba(20, 20, 45, 0.97);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  width: 520px; max-width: 92vw;
+  max-height: 80vh;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  display: flex; flex-direction: column;
+}
+#stats-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+#stats-header h3 { font-size: 16px; color: #fff; margin: 0; }
+#stats-close {
+  background: none; border: none; color: #888; font-size: 18px;
+  cursor: pointer; padding: 2px 6px; border-radius: 4px;
+  line-height: 1;
+}
+#stats-close:hover { color: #fff; background: rgba(255,255,255,0.1); }
+#stats-body {
+  padding: 14px 18px 18px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.stat-row {
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 13px; line-height: 1.5;
+}
+.stat-label { color: #888; min-width: 100px; flex-shrink: 0; }
+.stat-value { color: #e0e0e0; font-weight: 500; }
+.stat-value.highlight-hot { color: #ff6644; }
+.stat-value.highlight-cold { color: #44aaff; }
+.stat-value.highlight-warn { color: #ffcc44; }
+.stat-section {
+  color: #fff; font-size: 14px; font-weight: 700;
+  margin-top: 4px; padding-bottom: 2px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.stat-sub {
+  font-size: 12px; color: #666;
+  display: block; margin-top: 1px;
+}
+.stat-badge {
+  display: inline-block;
+  background: rgba(255,204,68,0.15);
+  color: #ffcc44;
+  font-size: 11px; font-weight: 600;
+  padding: 1px 8px; border-radius: 10px;
+  margin-left: 6px;
+}
 @media (max-width: 768px) {
   #top-bar { font-size: 11px; padding: 6px 12px; flex-wrap: wrap; }
   #bottom-panel { padding: 8px 10px; }
@@ -209,6 +269,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   #time-display { font-size: 12px; min-width: 140px; }
   #legend-gradient { width: 120px; }
   #elevation-container, #sky-container { width: 200px; height: 80px; }
+  #stats-content { width: 95vw; max-height: 85vh; }
 }
 </style>
 </head>
@@ -222,6 +283,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <div class="title">🚴 GPX Temperature Forecast<span id="route-info"></span></div>
       <button class="btn small" id="open-gpx-btn" title="Open a GPX file">📂 Open GPX</button>
       <input type="file" accept=".gpx,.xml" id="gpx-file-input" style="display:none">
+      <button class="btn small" id="stats-btn" title="Route statistics">📊 Stats</button>
     </div>
 
     <div id="elevation-container">
@@ -290,6 +352,37 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
         <span class="hot" id="max-temp">--°C</span>
       </div>
       <span id="last-updated"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Stats Modal -->
+<div id="stats-modal">
+  <div id="stats-content">
+    <div id="stats-header">
+      <h3>📊 Route Statistics</h3>
+      <button id="stats-close" title="Close">✕</button>
+    </div>
+    <div id="stats-body">
+      <div class="stat-section">🌡️ Temperature Extremes</div>
+      <div class="stat-row"><span class="stat-label">Max temp</span><span class="stat-value" id="stat-max-temp">—</span></div>
+      <div class="stat-row"><span class="stat-label">Min temp</span><span class="stat-value" id="stat-min-temp">—</span></div>
+
+      <div class="stat-section">🌞 Daily / 🌙 Nightly Average</div>
+      <div class="stat-row"><span class="stat-label">Daytime</span><span class="stat-value" id="stat-day-avg">—</span></div>
+      <div class="stat-row"><span class="stat-label">Nighttime</span><span class="stat-value" id="stat-night-avg">—</span></div>
+      <div class="stat-row"><span class="stat-label">Overall</span><span class="stat-value" id="stat-overall-avg">—</span></div>
+
+      <div class="stat-section">🚴 Best Time to Ride</div>
+      <div class="stat-row"><span class="stat-label">❄️ Coolest 4h</span><span class="stat-value" id="stat-coolest-window">—</span></div>
+      <div class="stat-row"><span class="stat-label">🔥 Hottest 4h</span><span class="stat-value" id="stat-hottest-window">—</span></div>
+
+      <div class="stat-section">🌿 Ideal Riding Conditions</div>
+      <div class="stat-row"><span class="stat-label">🟢 Sweet spot</span><span class="stat-value" id="stat-ideal-window">—</span></div>
+      <div class="stat-row"><span class="stat-label">Range</span><span class="stat-value" style="color:#888" id="stat-ideal-range">—</span></div>
+      <div class="stat-row"><span class="stat-label">At peak</span><span class="stat-value" id="stat-ideal-peak">—</span></div>
+
+      <div class="stat-row" style="margin-top:6px"><span class="stat-label" style="color:#555;font-size:11px">Forecast</span><span class="stat-sub" id="stat-forecast-info" style="color:#555;font-size:11px">—</span></div>
     </div>
   </div>
 </div>
@@ -638,6 +731,193 @@ function extractWeatherData(apiResponse, samples) {
   }
 
   return state.weatherData;
+}
+
+// ===========================================================================
+//  STATISTICS COMPUTATION
+// ===========================================================================
+function computeStats() {
+  const weather = state.weatherData;
+  const times = state.weatherTimes;
+  if (!weather || !weather.length || !times || !times.length) return null;
+
+  const windowH = 4;
+
+  let globalMin = { temp: Infinity, timeIdx: -1, sampleIdx: -1 };
+  let globalMax = { temp: -Infinity, timeIdx: -1, sampleIdx: -1 };
+  let daySum = 0, dayCount = 0;
+  let nightSum = 0, nightCount = 0;
+  let totalSum = 0, totalCount = 0;
+
+  // Per-hour average temps across all samples (for sliding window)
+  const hourlyAvgs = new Array(times.length).fill(null);
+
+  for (let t = 0; t < times.length; t++) {
+    const hour = parseInt(times[t].substring(11, 13));
+    const isDay = hour >= 6 && hour < 21;
+    let hSum = 0, hCount = 0;
+
+    for (let s = 0; s < weather.length; s++) {
+      const temp = weather[s].temps[t];
+      if (temp === null || temp === undefined) continue;
+
+      if (temp < globalMin.temp) globalMin = { temp, timeIdx: t, sampleIdx: s, lat: weather[s].lat, lon: weather[s].lon };
+      if (temp > globalMax.temp) globalMax = { temp, timeIdx: t, sampleIdx: s, lat: weather[s].lat, lon: weather[s].lon };
+
+      if (isDay) { daySum += temp; dayCount++; }
+      else { nightSum += temp; nightCount++; }
+      totalSum += temp; totalCount++;
+      hSum += temp; hCount++;
+    }
+
+    if (hCount > 0) hourlyAvgs[t] = hSum / hCount;
+  }
+
+  // Sliding window: coolest/hottest consecutive windowH hours
+  let coolest = { startIdx: 0, avgTemp: Infinity };
+  let hottest = { startIdx: 0, avgTemp: -Infinity };
+
+  for (let t = 0; t <= times.length - windowH; t++) {
+    let sum = 0, count = 0;
+    for (let w = 0; w < windowH; w++) {
+      if (hourlyAvgs[t + w] !== null) { sum += hourlyAvgs[t + w]; count++; }
+    }
+    if (count === windowH) {
+      const avg = sum / count;
+      if (avg < coolest.avgTemp) coolest = { startIdx: t, avgTemp: avg };
+      if (avg > hottest.avgTemp) hottest = { startIdx: t, avgTemp: avg };
+    }
+  }
+
+  // Ideal riding conditions: longest consecutive block where avg route temp
+  // stays within 15-25°C sweet spot
+  const IDEAL_MIN = 15, IDEAL_MAX = 25;
+  let idealStart = 0, idealLen = 0;
+  let bestIdealMid = 0; // for tiebreak: closest to 20°C
+  let currentStart = -1, currentLen = 0;
+
+  for (let t = 0; t < times.length; t++) {
+    if (hourlyAvgs[t] !== null && hourlyAvgs[t] >= IDEAL_MIN && hourlyAvgs[t] <= IDEAL_MAX) {
+      if (currentStart === -1) currentStart = t;
+      currentLen++;
+    } else {
+      if (currentLen > idealLen || (currentLen === idealLen && currentLen > 0 &&
+          Math.abs(hourlyAvgs[currentStart + Math.floor(currentLen/2)] - 20) < Math.abs(hourlyAvgs[bestIdealMid] - 20))) {
+        idealStart = currentStart;
+        idealLen = currentLen;
+        bestIdealMid = currentStart + Math.floor(currentLen/2);
+      }
+      currentStart = -1;
+      currentLen = 0;
+    }
+  }
+  // Check at end
+  if (currentLen > idealLen || (currentLen === idealLen && currentLen > 0 &&
+      Math.abs(hourlyAvgs[currentStart + Math.floor(currentLen/2)] - 20) < Math.abs(hourlyAvgs[bestIdealMid] - 20))) {
+    idealStart = currentStart;
+    idealLen = currentLen;
+  }
+
+  // Peak ideal condition: the hour within the ideal window closest to 20°C
+  let peakIdx = idealStart;
+  let peakDist = Infinity;
+  for (let t = idealStart; t < idealStart + idealLen; t++) {
+    if (hourlyAvgs[t] !== null) {
+      const d = Math.abs(hourlyAvgs[t] - 20);
+      if (d < peakDist) { peakDist = d; peakIdx = t; }
+    }
+  }
+
+  return {
+    globalMin,
+    globalMax,
+    avgDay: dayCount > 0 ? daySum / dayCount : null,
+    avgNight: nightCount > 0 ? nightSum / nightCount : null,
+    avgOverall: totalCount > 0 ? totalSum / totalCount : null,
+    coolest,
+    hottest,
+    windowHours: windowH,
+    idealStart,
+    idealLen,
+    idealPeakIdx: peakIdx,
+    idealRange: [IDEAL_MIN, IDEAL_MAX],
+    totalHours: times.length,
+  };
+}
+
+function formatTimeStr(timeStr) {
+  if (!timeStr) return '—';
+  const d = new Date(timeStr);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderStats(stats) {
+  if (!stats) return;
+
+  const hot = stats.globalMax.temp !== -Infinity ? `${stats.globalMax.temp.toFixed(1)}°C on ${formatTimeStr(state.weatherTimes[stats.globalMax.timeIdx])}` : '—';
+  document.getElementById('stat-max-temp').innerHTML = `<span class="stat-value highlight-hot">${hot}</span>`;
+
+  const cold = stats.globalMin.temp !== Infinity ? `${stats.globalMin.temp.toFixed(1)}°C on ${formatTimeStr(state.weatherTimes[stats.globalMin.timeIdx])}` : '—';
+  document.getElementById('stat-min-temp').innerHTML = `<span class="stat-value highlight-cold">${cold}</span>`;
+
+  document.getElementById('stat-day-avg').textContent = stats.avgDay !== null ? `${stats.avgDay.toFixed(1)}°C` : '—';
+  document.getElementById('stat-night-avg').textContent = stats.avgNight !== null ? `${stats.avgNight.toFixed(1)}°C` : '—';
+  document.getElementById('stat-overall-avg').textContent = stats.avgOverall !== null ? `${stats.avgOverall.toFixed(1)}°C` : '—';
+
+  // Coolest/hottest windows
+  const coolStart = formatTimeStr(state.weatherTimes[stats.coolest.startIdx]);
+  const coolEnd = formatTimeStr(state.weatherTimes[stats.coolest.startIdx + stats.windowHours - 1]);
+  document.getElementById('stat-coolest-window').innerHTML =
+    `<span class="stat-value highlight-cold">${coolStart} → ${coolEnd}  <span class="stat-badge">avg ${stats.coolest.avgTemp.toFixed(1)}°C</span></span>`;
+
+  const hotStart = formatTimeStr(state.weatherTimes[stats.hottest.startIdx]);
+  const hotEnd = formatTimeStr(state.weatherTimes[stats.hottest.startIdx + stats.windowHours - 1]);
+  document.getElementById('stat-hottest-window').innerHTML =
+    `<span class="stat-value highlight-hot">${hotStart} → ${hotEnd}  <span class="stat-badge">avg ${stats.hottest.avgTemp.toFixed(1)}°C</span></span>`;
+
+  // Ideal riding conditions
+  if (stats.idealLen > 0) {
+    const iStart = formatTimeStr(state.weatherTimes[stats.idealStart]);
+    const iEnd = formatTimeStr(state.weatherTimes[stats.idealStart + stats.idealLen - 1]);
+    const iMidAvg = (() => {
+      let sum = 0, cnt = 0;
+      for (let t = stats.idealStart; t < stats.idealStart + stats.idealLen; t++) {
+        const a = state.weatherData.map(w => w.temps[t]).filter(v => v !== null && v !== undefined);
+        if (a.length) { sum += a.reduce((x,y)=>x+y) / a.length; cnt++; }
+      }
+      return cnt > 0 ? (sum / cnt).toFixed(1) : '—';
+    })();
+    document.getElementById('stat-ideal-window').innerHTML =
+      `<span class="stat-value" style="color:#40cc40">${iStart} → ${iEnd}  <span class="stat-badge">${stats.idealLen}h · avg ${iMidAvg}°C</span></span>`;
+    document.getElementById('stat-ideal-range').textContent =
+      `${stats.idealRange[0]}–${stats.idealRange[1]}°C`;
+    const peakTime = formatTimeStr(state.weatherTimes[stats.idealPeakIdx]);
+    const peakTemp = state.weatherData.map(w => w.temps[stats.idealPeakIdx]).filter(v => v !== null && v !== undefined);
+    const peakAvg = peakTemp.length ? (peakTemp.reduce((x,y)=>x+y) / peakTemp.length).toFixed(1) : '—';
+    document.getElementById('stat-ideal-peak').innerHTML =
+      `<span class="stat-value" style="color:#40cc40">${peakTime}  <span class="stat-badge">${peakAvg}°C → closest to 20°C</span></span>`;
+  } else {
+    document.getElementById('stat-ideal-window').textContent = 'No period within 15–25°C range';
+    document.getElementById('stat-ideal-range').textContent = '15–25°C';
+    document.getElementById('stat-ideal-peak').textContent = '—';
+  }
+
+  const routeName = state.routeData && state.routeData.stages
+    ? `${state.routeData.stages[0].name} → ${state.routeData.stages[state.routeData.stages.length-1].name}`
+    : '—';
+  document.getElementById('stat-forecast-info').textContent =
+    `${stats.totalHours}h forecast · ${state.weatherData.length} sample points · ${routeName}`;
+}
+
+function toggleStatsModal() {
+  const modal = document.getElementById('stats-modal');
+  const isOpen = modal.classList.contains('visible');
+  if (isOpen) {
+    modal.classList.remove('visible');
+  } else {
+    if (state.stats) renderStats(state.stats);
+    modal.classList.add('visible');
+  }
 }
 
 function getTempAtSample(sampleIdx, timeIdx) {
@@ -1492,6 +1772,7 @@ async function refreshWeather() {
     // Re-fetch
     const weatherResp = await fetchWeatherData(samples);
     extractWeatherData(weatherResp, samples);
+    state.stats = computeStats();
 
     // Start at current real-world time, skip past hours
     state.currentTimeIndex = Math.min(getCurrentTimeIndex(), state.totalHours - 1);
@@ -1730,6 +2011,7 @@ async function initApp(routeData) {
   const weatherResp = await fetchWeatherData(routeData.samples);
   setLoadMsg('Processing weather data…');
   extractWeatherData(weatherResp, routeData.samples);
+  state.stats = computeStats();
   setLoadProgress(60);
 
   // 3. Init map
@@ -1770,7 +2052,9 @@ async function initApp(routeData) {
   // 11. Done
   setLoadProgress(100);
   hideLoading();
-  setStatus(`Ready · ${routeData.samples.length} forecast points · ${state.totalHours}h forecast`);
+
+  // Show a concise status line
+  setStatus(`✅ Loaded · ${routeData.samples.length} points · ${state.totalHours}h forecast · 📊 Stats button for details`);
 
   // Set last-updated timestamp
   const now = new Date();
@@ -1879,6 +2163,21 @@ function setupFileInput() {
     if (this.files && this.files[0]) {
       handleGpxFile(this.files[0]);
       this.value = ''; // reset so same file can be re-selected
+    }
+  });
+
+  // Stats modal button
+  document.getElementById('stats-btn').addEventListener('click', toggleStatsModal);
+  document.getElementById('stats-close').addEventListener('click', toggleStatsModal);
+  // Close on backdrop click
+  document.getElementById('stats-modal').addEventListener('click', function(e) {
+    if (e.target === this) toggleStatsModal();
+  });
+  // Close on Escape
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      const modal = document.getElementById('stats-modal');
+      if (modal.classList.contains('visible')) toggleStatsModal();
     }
   });
 
