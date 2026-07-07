@@ -295,10 +295,11 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
     </div>
 
     <div id="loading">
-      <div class="spinner"></div>
+      <div class="spinner" id="load-spinner"></div>
       <div class="msg" id="load-msg">Loading route data…</div>
       <div class="sub" id="load-sub"></div>
-      <div class="progress-bar"><div class="progress-fill" id="load-progress"></div></div>
+      <div class="progress-bar" id="load-progress-bar"><div class="progress-fill" id="load-progress"></div></div>
+      <button class="btn" id="load-dismiss" style="display:none;margin-top:12px">✕ Dismiss</button>
     </div>
 
     <div id="drop-overlay">
@@ -2117,6 +2118,26 @@ async function handleGpxFile(file) {
     setLoadMsg(`❌ ${err.message}`);
     setLoadSub(err.message.includes('GPX') ? 'Make sure the file is a valid .gpx file.' : '');
     loading.style.display = 'flex';
+    document.getElementById('load-spinner').style.display = 'none';
+    document.getElementById('load-progress-bar').style.display = 'none';
+    const dismissBtn = document.getElementById('load-dismiss');
+    dismissBtn.style.display = 'inline-block';
+    dismissBtn.onclick = function dismiss() {
+      loading.style.display = 'none';
+      dismissBtn.style.display = 'none';
+      dismissBtn.onclick = null;
+      document.getElementById('load-spinner').style.display = '';
+      document.getElementById('load-progress-bar').style.display = '';
+      setLoadMsg('Loading route data…');
+      setLoadSub('');
+      setLoadProgress(0);
+      // Restore previous state if there was a working route
+      if (state.routeData && state.map) {
+        setStatus(`Ready · ${state.routeData.samples.length} forecast points`);
+      } else {
+        setStatus('No route loaded. Open a GPX file to begin.');
+      }
+    };
     console.error(err);
   }
 }
