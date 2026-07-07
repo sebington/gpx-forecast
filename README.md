@@ -16,6 +16,7 @@ Voir la version en ligne : https://sebington.github.io/gpx-forecast/
 - **Étiquettes de température** — 10 étiquettes réparties uniformément sur l'itinéraire, colorées et en direct
 - **Raccourcis clavier** — `Espace` pour lecture/pause, `←` / `→` pour avancer pas à pas
 - **Passer la souris au dessus de la trace** — donne un aperçu de la température à cet endroit
+- **Statistiques** — Sur les températures maxi et mini et sur les meilleures conditions (fenêtres) possibles
 
 ## Limitations
 
