@@ -8,7 +8,8 @@ Voir la version en ligne : https://sebington.github.io/gpx-forecast/
 
 ## Fonctionnalités
 
-- **Ouvrez n'importe quel fichier `.gpx`** — glissez-déposez ou cliquez sur le bouton. Toute l'analyse se fait dans votre navigateur.
+- **Ouvrez n'importe quel fichier GPX** — glissez-déposez ou cliquez sur le bouton
+- **Confidentialité** — Toute l'analyse se fait dans votre navigateur
 - **Prévisions sur 16 jours** — API gratuite [Open-Meteo](https://open-meteo.com), mise en cache localement
 - **Coloration en direct** — segments de l'itinéraire colorés selon la température, animables heure par heure
 - **Jour et nuit** — le panneau ciel permet d'avoir un aperçu rapide du moment de la journée ou de la nuit
@@ -22,6 +23,6 @@ Voir la version en ligne : https://sebington.github.io/gpx-forecast/
 
 - **Nombre maximum de points** — le fichier GPX doit faire 1500 points maximum
 
-## Technos utilisées
+## Tech utilisées
 
-Leaflet · OpenStreetMap · Open-Meteo · JS vanilla · sans outil de build
+Leaflet · OpenStreetMap · Open-Meteo · JS vanilla
